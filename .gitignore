@@ -31,3 +31,20 @@ node_modules/
 Thumbs.db
 *.swp
 *.tmp
+
+# Server-only data and generated artifacts
+/data/
+/datasets/
+/weights/
+/checkpoints/
+/artifacts/
+/outputs/
+/intermediate/
+/logs/
+/runs/
+/tmp/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.log
