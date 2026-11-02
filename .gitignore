@@ -1,0 +1,33 @@
+# Credentials and private configuration
+.env
+.env.*
+!.env.example
+!.env.template
+.ssh/
+.aws/
+.kube/
+.git-credentials
+.netrc
+id_rsa
+id_ed25519
+*.pem
+*.key
+*.p12
+credentials.json
+credentials.yaml
+credentials.yml
+
+# Generated caches, environments, and build output
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.venv/
+venv/
+node_modules/
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
