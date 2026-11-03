@@ -135,7 +135,7 @@ RRSI 更直接回应“进化是否只记住基准”。作者报告在进化使
 
 **八、路线 E：Harness 与 Policy 联合进化——让改进作用于多个耦合组件**
 
-[ SIA ](https://arxiv.org/abs/2605.27276)让 Feedback-Agent 根据任务轨迹选择更新 scaffold 或权重，在法律分类、GPU kernel 优化和单细胞去噪三个设置中比较两种更新手段。[Continual Harness](https://arxiv.org/abs/2605.09998)则在持续交互中修改 prompt、子 Agent、技能与记忆，并扩展到参数训练。它们让“本轮该改什么”成为可研究的调度问题，而不是先固定一种更新表面。
+[SIA](https://arxiv.org/abs/2605.27276)让 Feedback-Agent 根据任务轨迹选择更新 scaffold 或权重，在法律分类、GPU kernel 优化和单细胞去噪三个设置中比较两种更新手段。[Continual Harness](https://arxiv.org/abs/2605.09998)则在持续交互中修改 prompt、子 Agent、技能与记忆，并扩展到参数训练。它们让“本轮该改什么”成为可研究的调度问题，而不是先固定一种更新表面。
 
 10 月的 [Self-HPO](https://arxiv.org/abs/2610.22791)把这个闭环组织得更清晰：当前策略分析失败并提出 Harness；在选出的 Harness 下做 RL；新策略再提出下一版 Harness。作者报告 Qwen3.5-35B-A3B 在三个编码基准上的平均解决率由 57.8% 提高至 64.8%，并进行组件交叉配对与分布外评估。这提供了联合收益与递归耦合的具体证据；是否长期提高改进器效率，仍应独立测量。
 
@@ -263,3 +263,79 @@ Ai2 的[预算对等与留出评测研究](https://arxiv.org/abs/2607.12227)直�
 
 这个项目可以先在无需训练的可执行任务中建立评测，随后再扩展参数更新。实验预算、任务规模与基础模型应根据服务器可用资源另行确定；本文没有假定已获得 GPU 或 API 预算，也没有启动训练。
 
+**十五、建议的阅读顺序与文献索引**
+
+为了先建立可比较的判断尺度，建议按下面顺序阅读：
+
+1. 先读 [A Taxonomy of Self-evolving Agents](https://lsl.zone/blog/2026/a-taxonomy-of-self-evolving-agents/)与 [Harness Engineering for Self-Improvement](https://lilianweng.github.io/posts/2026-07-04-harness/)，建立更新对象的地图。这两项是作者技术博客，不应当替代实验论文。
+2. 再读 [STOP](https://arxiv.org/abs/2310.02304)、[DGM](https://arxiv.org/abs/2505.22954)、[Hyperagents](https://arxiv.org/abs/2603.19461)，观察从程序优化到可编辑元过程的差别。
+3. 接着读 [AIDE²](https://arxiv.org/abs/2609.26457)、[Self-HPO](https://arxiv.org/abs/2610.22791)、[Skill∞](https://arxiv.org/abs/2610.35434)，分别理解科研效率、组件耦合和元技能三种具体实现。
+4. 然后读 [Rethinking the Evaluation…](https://arxiv.org/abs/2607.12227)、[RRSI](https://arxiv.org/abs/2609.24972)与 [RSIBench-Data](https://arxiv.org/abs/2607.25886)，重新检查预算、泛化与整条研究轨迹。
+5. 最后读 [RRI](https://arxiv.org/abs/2610.21040)、[RSI Arena](https://arxiv.org/abs/2610.33624)、[可信 RSI 综述](https://arxiv.org/abs/2610.35193)，把评价标准、能力保持与监督纳入同一框架。
+
+下面索引用于直接回到原始来源。年份主要采用首次公开年份，括号说明重要的后续版本；arXiv 链接本身不表示论文已经同行评审。会议录与 arXiv 更新时间可能不同，实际引用应以选用版本为准。本文没有用搜索引擎推断的“Published”时间覆盖 arXiv 的 Submission history。
+
+| 编号 | 时间或版本 | 原始入口 | 阅读用途 |
+| --- | --- | --- | --- |
+| 01 | 2026，用户提供 | [知乎原文：什么是 Self-evolving / self-improving / RSI](https://zhuanlan.zhihu.com/p/2065227313973825752) | 本次问题入口；直接抓取受限 |
+| 02 | 页面标注 2026-07-28 | [青稞社区同文转载](https://www.qingkeai.online/blog/Self-evolving) | 本次实际读取的文章版本 |
+| 03 | 2026，技术博客 | [A Taxonomy of Self-evolving Agents](https://lsl.zone/blog/2026/a-taxonomy-of-self-evolving-agents/) | 按更新对象理解研究 |
+| 04 | 2026-07-04，技术博客 | [Harness Engineering for Self-Improvement](https://lilianweng.github.io/posts/2026-07-04-harness/) | Harness 设计与优化体系 |
+| 05 | 2003，后续修订与出版 | [Goedel Machines](https://arxiv.org/abs/cs/0309048) | 可证明自修改的理论起点 |
+| 06 | 2022 | [STaR: Bootstrapping Reasoning With Reasoning](https://arxiv.org/abs/2203.14465) | 自生成推理训练 |
+| 07 | 2023 | [Self-Refine: Iterative Refinement with Self-Feedback](https://arxiv.org/abs/2303.17651) | 输出层自修订 |
+| 08 | 2023 | [Reflexion: Language Agents with Verbal Reinforcement Learning](https://arxiv.org/abs/2303.11366) | 文字反思与外部记忆 |
+| 09 | 2023 | [Voyager: An Open-Ended Embodied Agent with Large Language Models](https://arxiv.org/abs/2305.16291) | 自动课程与可执行技能库 |
+| 10 | 2023；COLM 2024 | [Self-Taught Optimizer (STOP)](https://arxiv.org/abs/2310.02304) | 改进器自修改；[会议录](https://proceedings.colm.cc/paper_files/paper/2024/hash/52eb24c316c78cc144dfa54f1f4bb4ec-Abstract-Conference.html) |
+| 11 | 2023 | [Large Language Models Cannot Self-Correct Reasoning Yet](https://arxiv.org/abs/2310.01798) | 内在自纠的条件与边界 |
+| 12 | 2024；ICML 2024 | [Self-Rewarding Language Models](https://arxiv.org/abs/2401.10020) | 自奖励与迭代偏好优化 |
+| 13 | 2024 | [Self-Play Fine-Tuning Converts Weak Language Models to Strong Language Models](https://arxiv.org/abs/2401.01335) | SPIN 与既有示范数据 |
+| 14 | 2024 | [Automated Design of Agentic Systems](https://arxiv.org/abs/2408.08435) | ADAS / Meta Agent Search |
+| 15 | 2024 | [The AI Scientist](https://arxiv.org/abs/2408.06292) | 自动科研流程与科研产物 |
+| 16 | 2024；2025 修订 | [MLE-bench](https://arxiv.org/abs/2410.07095) | ML 工程能力与预算 |
+| 17 | 2024；2025 修订 | [RE-Bench](https://arxiv.org/abs/2411.15114) | AI R&D 与人类专家对照 |
+| 18 | 2025 | [DeepSeek-R1](https://arxiv.org/abs/2501.12948) | 可验证奖励与推理训练 |
+| 19 | 2025 | [A Self-Improving Coding Agent](https://arxiv.org/abs/2504.15228) | SICA，自改 Agent 脚本 |
+| 20 | 2025 | [TTRL: Test-Time Reinforcement Learning](https://arxiv.org/abs/2504.16084) | 无标签测试时参数适应 |
+| 21 | 2025 | [Absolute Zero](https://arxiv.org/abs/2505.03335) | 自出题、执行验证与课程 |
+| 22 | 2025；v3 为 2026-03；ICLR 2026 | [Darwin Godel Machine](https://arxiv.org/abs/2505.22954) | 代码自改与开放式档案；[会议录](https://proceedings.iclr.cc/paper_files/paper/2026/hash/aa5f5e6eb6f613ec412f1d948dfa21a5-Abstract-Conference.html) |
+| 23 | 2025-05-14，官方技术发布 | [AlphaEvolve](https://deepmind.google/discover/blog/alphaevolve-a-gemini-powered-coding-agent-for-designing-advanced-algorithms/) | 算法发现与训练基础设施反馈 |
+| 24 | 2025；2026 修订/会议版本 | [GEPA](https://arxiv.org/abs/2507.19457) | 轨迹反思与 prompt 演化 |
+| 25 | 2026，项目仓库 | [karpathy/autoresearch](https://github.com/karpathy/autoresearch) | 受限训练实验自动循环 |
+| 26 | v1：2026-03-19 | [Hyperagents](https://arxiv.org/abs/2603.19461) | 可编辑任务 Agent 与元 Agent |
+| 27 | v1：2026-04-13；v2：06-11 | [Self-Distillation Zero](https://arxiv.org/abs/2604.12002) | 把修订能力变成密集监督 |
+| 28 | 2026-05 | [SIA: Self Improving AI with Harness & Weight Updates](https://arxiv.org/abs/2605.27276) | Harness 与权重的更新选择 |
+| 29 | 2026-05 | [Continual Harness](https://arxiv.org/abs/2605.09998) | 不重置环境的在线系统适应 |
+| 30 | v1：2026-07；v2：09-06 | [Recursive Self-Improvement in AI: From Bounded Self-Refinement to Autonomous Research Loops](https://arxiv.org/abs/2607.07663) | 综合分类、验证信号与研究判断 |
+| 31 | v1：2026-07；本次读取 v4：10-05 | [Rethinking the Evaluation of Harness Evolution for Agents](https://arxiv.org/abs/2607.12227) | 预算匹配、泛化及长程游戏正反结果 |
+| 32 | 2026-07-17 | [Recursive Harness Self-Improvement](https://arxiv.org/abs/2607.15524) | RHI，信息传递与任务特定 Harness |
+| 33 | 2026-07-28 | [RSIBench-Data](https://arxiv.org/abs/2607.25886) | 固定训练栈的数据策略研究 |
+| 34 | 2026，官方项目 | [RSIBench-Data 项目页](https://rsibench.co/data/) | 任务、预算与基础设施说明 |
+| 35 | 2026-08-07，官方项目 | [Announcing RSI Bench](https://rsi-benchmark.com/blog/announcing-rsi-bench) | AI R&D 任务测量框架 |
+| 36 | 2026，官方仓库与协议 | [RSI-Exam](https://github.com/aiming-lab/RSI-Exam) | 隐藏集重跑与长程可执行研究 |
+| 37 | v1：2026-09-06；v2：09-09 | [MetaRSI / RSI²](https://arxiv.org/abs/2609.06396) | Data—Harness—Model 组合与元调度 |
+| 38 | v1：2026-09-21；v3：10-04 | [RRSI](https://arxiv.org/abs/2609.24972) | 正则化、筛选与剪枝 |
+| 39 | v1：2026-09-22 | [Recursive self-improvement of AI research agents](https://arxiv.org/abs/2609.26457) | AIDE² 原论文与外部基准 |
+| 40 | 技术博客，当前可访问版本 | [AIDE²: First Evidence of Recursive Self-Improvement](https://www.weco.ai/blog/first-evidence-of-recursive-self-improvement) | ignition test 与作者自定义 Level |
+| 41 | v1：2026-09-25 | [Recursive Self-Improvement via On-Policy Distillation for Reasoning](https://arxiv.org/abs/2609.30652) | DCE+SRCL 与特权教师动态更新 |
+| 42 | 本次读取 v2：2026-10-15 | [Predict Before You Modify](https://arxiv.org/abs/2610.13991) | 可编辑的改进效果预测器 |
+| 43 | 2026-10-07 | [RSI-Forge](https://arxiv.org/abs/2610.09426) | 从论文构建研究环境 |
+| 44 | arXiv v1：2026-10-10 | [From Existing Methods to New Research Ideas: Two Perspectives on Recursive Self-Improvement](https://arxiv.org/abs/2610.14625) | 九维设计空间、学习机制与选题 |
+| 45 | v1：2026-10-12 | [Drafting Agents, Not Just Tokens](https://arxiv.org/abs/2610.16491) | SpecRSI 与验证预算分配 |
+| 46 | v1：2026-10-15 | [The Self-Improvement Problem](https://arxiv.org/abs/2610.21646) | 一般保证与有界评测的区别 |
+| 47 | v1：2026-10-15 | [Recursive Reward Improvement via Adversarial Meta-Prompt Evolution](https://arxiv.org/abs/2610.21040) | 对抗修复开放任务 rubric |
+| 48 | v1：2026-10-15 | [RSIFlow](https://arxiv.org/abs/2610.21791) | 元 Agent 工作流与经验继承 |
+| 49 | v1：2026-10-15；v2：10-22 | [R²Orch](https://arxiv.org/abs/2610.22740) | 自博弈编排与技能内化/撤回 |
+| 50 | v1：2026-10-16 | [Self-Evolving Coding Agents via Harness-Policy Optimization](https://arxiv.org/abs/2610.22791) | Self-HPO 的闭环与组件对照 |
+| 51 | v1：2026-10-23 | [On-Policy Self-Training](https://arxiv.org/abs/2610.32770) | 自合成特权上下文与数据 |
+| 52 | v1：2026-10-23 | [RSI-Opt](https://arxiv.org/abs/2610.32026) | 优化器 Agent 的知识与控制策略 |
+| 53 | v1：2026-10-24 | [RSI Arena](https://arxiv.org/abs/2610.33624) | 自主后训练与人类偏好反馈 |
+| 54 | v1：2026-10-26 | [Skill∞](https://arxiv.org/abs/2610.35434) | 任务技能与元技能的递归优化 |
+| 55 | v1：2026-10-26 | [Trustworthy Recursive Self-Improvement in the Era of Large Models](https://arxiv.org/abs/2610.35193) | 收益真实性、约束与监督 |
+| 56 | v1：2026-10-28 | [Recursive Self-Improvement in Physical AI](https://arxiv.org/abs/2610.38266) | 具身经验、改进器与物理评测 |
+
+**维护与使用说明**
+
+本文保留了原始来源链接，并把核心数字写在相应任务和预算语境中。后续更新时，优先核对原始论文版本、开放代码及独立复现，而不是用新闻发布时间覆盖论文日期。作者报告的增益、本文提出的判读框架、尚待验证的研究方向，应持续保持区分。
+
+若将本文转写为论文 Related Work，应围绕实际研究问题挑选直接相关的工作，并再次核对引用元数据及所引用版本；不能直接把整份路线地图当作一个项目已经覆盖或超越的研究范围。
