@@ -5,23 +5,26 @@ The SDK runs the control loop on BJTU and connects to the PyTRIO service.
 
 ## Python environment
 
-The project uses an isolated `.venv` based on the existing server Python 3.12.12.
-The system Python 3.8 is too old for PyTRIO 0.2.9, which requires Python >= 3.10.
+The project uses the named Conda environment `ai-plus` with Python 3.12.12.
+If the current terminal shows `((.venv) )`, run `deactivate` first.
 
 ```bash
 cd "/opt/data/private/mzx/mzx/AI +"
-source .venv/bin/activate
+source /root/miniconda3/etc/profile.d/conda.sh
+conda activate ai-plus
 python -m pip check
 python -c 'from importlib.metadata import version; print(version("pytrio"))'
 trio --help
 ```
 
-To recreate a missing environment on this server:
+To recreate the environment on BJTU:
 
 ```bash
 cd "/opt/data/private/mzx/mzx/AI +"
-/opt/data/private/mzx/.conda/envs/torch210-cu128-py312/bin/python -m venv .venv
-.venv/bin/python -m pip install --no-cache-dir -r requirements-pytrio.txt
+source /root/miniconda3/etc/profile.d/conda.sh
+conda create --name ai-plus --override-channels -c https://repo.anaconda.com/pkgs/main python=3.12.12 pip
+conda activate ai-plus
+python -m pip install --no-cache-dir -r requirements-pytrio.txt
 ```
 
 Respect the pinned SDK version. Install optional training libraries only as a
@@ -83,7 +86,6 @@ Official sources:
 
 ## Storage and synchronization
 
-`.venv/` and `tmp/` are ignored by Git. Credentials and the globally installed
-skill remain outside the repository. Only this guide and the dependency
-specification belong in Git. Leave synchronization to the existing hourly
-service unless immediate synchronization is explicitly requested.
+The `ai-plus` Conda environment, credentials, and globally installed skill
+live outside the repository. The legacy `.venv/` and `tmp/` are ignored by Git.
+This guide and the dependency specification use the existing hourly Git sync.
