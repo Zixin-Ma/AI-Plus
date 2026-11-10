@@ -1,0 +1,2 @@
+# PyTRIO SDK; Python >= 3.10. Validated with Python 3.12.
+pytrio==0.2.9

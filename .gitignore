@@ -35,6 +35,7 @@ Thumbs.db
 # Server-only data and generated artifacts
 /data/
 /datasets/
+/Datasets/
 /weights/
 /checkpoints/
 /artifacts/
