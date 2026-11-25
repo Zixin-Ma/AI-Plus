@@ -1,0 +1,10 @@
+**
+!Dockerfile
+!app/
+!app/*.py
+!work/
+!work/sdk/
+!work/sdk/contest_harness/
+!work/sdk/contest_harness/*.py
+!work/sdk/template/
+!work/sdk/template/harness.py
