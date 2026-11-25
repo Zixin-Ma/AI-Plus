@@ -43,26 +43,38 @@ def receive_piece(job, index, start, end, parts, proxy):
     temporary = target.with_suffix(".receiving")
     if not hasattr(LOCAL, "session"):
         LOCAL.session = requests.Session()
+        LOCAL.session.trust_env = False
+        LOCAL.session.verify = "/etc/ssl/certs/ca-certificates.crt"
         LOCAL.session.headers["User-Agent"] = "AIPlus-Public-Dataset-Downloader/1.0"
-        if proxy:
-            LOCAL.session.proxies.update({"http": proxy, "https": proxy})
     lock = HOST_LOCKS[urlparse(job["url"]).hostname]
     last_error = None
     for attempt in range(20):
         delay = min(60, 3 * (attempt + 1))
         try:
+            have = temporary.stat().st_size if temporary.exists() else 0
+            if have == expected:
+                temporary.replace(target)
+                return expected
+            if have > expected:
+                raise ValueError("Partial range is larger than requested")
+            # Periodically try the other transport so losing a forwarded proxy
+            # cannot permanently stop an unattended server download.
+            is_aws = urlparse(job["url"]).hostname.endswith("amazonaws.com")
+            use_proxy = proxy and ((is_aws and attempt % 3 == 2) or
+                                   (not is_aws and attempt % 3 != 2))
+            transport = {"http": proxy, "https": proxy} if use_proxy else {}
             with lock:
-                with LOCAL.session.get(job["url"], headers={"Range": f"bytes={start}-{end}"},
-                                       stream=True, timeout=(90, 90)) as response:
+                with LOCAL.session.get(job["url"], headers={"Range": f"bytes={start + have}-{end}"},
+                                       proxies=transport, stream=True, timeout=(60, 90)) as response:
                     if response.status_code in (403, 429, 503):
                         delay = max(60, int(response.headers.get("Retry-After", "60")))
                     response.raise_for_status()
                     content_range = response.headers.get("Content-Range", "")
-                    if response.status_code != 206 or not content_range.startswith(f"bytes {start}-{end}/"):
+                    if response.status_code != 206 or content_range != f"bytes {start + have}-{end}/{job['bytes']}":
                         raise ValueError(f"Server returned unexpected range {content_range}")
-                    count = 0
-                    with temporary.open("wb") as handle:
-                        for block in response.iter_content(128 * 1024):
+                    count = have
+                    with temporary.open("ab") as handle:
+                        for block in response.iter_content(16 * 1024):
                             count += len(block)
                             if count > expected:
                                 raise ValueError("Range exceeds requested size")
@@ -75,9 +87,8 @@ def receive_piece(job, index, start, end, parts, proxy):
                     return count
         except (requests.RequestException, ValueError, OSError) as exc:
             last_error = str(exc)
-            temporary.unlink(missing_ok=True)
             if attempt in (0, 4, 9, 19):
-                announce("RETRY", job["key"], index, attempt + 1, last_error[:180])
+                announce("RETRY", job["key"], index, attempt + 1, last_error[:700])
             time.sleep(delay)
     raise RuntimeError(f"Failed range {index} in {job['key']}: {last_error}")
 
@@ -116,18 +127,24 @@ def download(job, root, workers, block_size, proxy):
     size = job["bytes"]
     count = (size + block_size - 1) // block_size
     done = 0
+    failed = []
     stamp = time.monotonic()
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [pool.submit(receive_piece, job, i, i * block_size,
                                min(size - 1, (i + 1) * block_size - 1), parts, proxy)
                    for i in range(count)]
         for future in as_completed(futures):
-            done += future.result()
+            try:
+                done += future.result()
+            except Exception as exc:
+                failed.append(str(exc))
             if time.monotonic() - stamp >= 30:
                 atomic_json(folder / "progress.json", {"completed_range_bytes": done,
                             "expected_bytes": size, "at_utc": datetime.now(timezone.utc).isoformat()})
                 announce("PROGRESS", job["key"], done, "/", size)
                 stamp = time.monotonic()
+    if failed:
+        raise RuntimeError(f"{len(failed)} ranges need retry; first: {failed[0]}")
     assembling = folder / (job["name"] + ".assembling")
     with assembling.open("wb") as output:
         for i in range(count):
@@ -147,27 +164,46 @@ def main():
     parser.add_argument("--workers", type=int, default=48)
     parser.add_argument("--block-mib", type=int, default=1)
     parser.add_argument("--proxy")
+    parser.add_argument("--retry-rounds", type=int, default=1,
+                        help="0 retries incomplete datasets until all are verified")
+    parser.add_argument("--retry-wait", type=int, default=120)
     args = parser.parse_args()
     root = args.root.resolve()
     jobs = json.loads((root / "selected.json").read_text())
     for job in jobs:
         host = urlparse(job["url"]).hostname
-        capacity = 12 if host == "zenodo.org" else 48 if host.endswith("amazonaws.com") else 16
+        capacity = 24 if host == "zenodo.org" else 128 if host.endswith("amazonaws.com") else 32
         HOST_LOCKS.setdefault(host, threading.BoundedSemaphore(capacity))
-    results, errors = [], []
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        futures = {pool.submit(download, job, root, args.workers, args.block_mib * 1024 * 1024,
-                               args.proxy): job for job in jobs}
-        for future in as_completed(futures):
-            job = futures[future]
-            try:
-                results.append(future.result())
-            except Exception as exc:
-                errors.append({"key": job["key"], "error": str(exc)})
-                announce("FAILED", job["key"], str(exc))
-    atomic_json(root / "download_summary.json", {"completed": results, "errors": errors})
-    if errors:
-        raise SystemExit(1)
+    results = {}
+    pending = jobs
+    round_number = 0
+    while pending:
+        round_number += 1
+        errors = []
+        retry = []
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            futures = {pool.submit(download, job, root, args.workers, args.block_mib * 1024 * 1024,
+                                   args.proxy): job for job in pending}
+            for future in as_completed(futures):
+                job = futures[future]
+                try:
+                    results[job["key"]] = future.result()
+                except Exception as exc:
+                    errors.append({"key": job["key"], "error": str(exc)})
+                    retry.append(job)
+                    announce("FAILED_ROUND", round_number, job["key"], str(exc))
+                atomic_json(root / "download_summary.json",
+                            {"completed": list(results.values()), "errors": errors,
+                             "pending": [v["key"] for v in pending if v["key"] not in results],
+                             "round": round_number,
+                             "updated_utc": datetime.now(timezone.utc).isoformat()})
+        if retry and args.retry_rounds and round_number >= args.retry_rounds:
+            raise SystemExit(1)
+        pending = retry
+        if pending:
+            announce("RETRY_ROUND", round_number + 1, "in", args.retry_wait, "seconds")
+            time.sleep(args.retry_wait)
+    announce("ALL_VERIFIED", len(results))
 
 if __name__ == "__main__":
     main()

@@ -110,6 +110,12 @@ def train(rnd):
         return measures(key, yv, values(key, base, correction, xv), groups)
     parent = evaluate(model, head)
     diagnosis = diagnose(key, model, training, validation, history, parent)
+    if key == "B" and head:
+        # Isolate whether a changed vibration regime has broken the prior correction.
+        bare = evaluate(model, {})
+        diagnosis["disable_head_probe"] = {
+            "RMSE_gain": round(parent["primary"] - bare["primary"], 3),
+            "worst_bearing_gain": round(parent["worst"] - bare["worst"], 3)}
     options = dict(temperature=0, enable_thinking=False)
     planner = rnd.model(plan_request(key, rnd.round_index, diagnosis, bool(head)),
                         max_tokens=min(rnd.max_output_tokens, 56), **options)

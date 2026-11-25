@@ -76,7 +76,7 @@ def offline_report(doc):
          table(["时机","Qwen3.8-27B 获得的证据","实际动作"],
                [["训练前","输入偏移、最差组、近期历史，以及训练内分组实验证据与计算成本","选择重拟合任务分支、沿用分支或纯 Adam，并决定全量或半量学习率。"],
                 ["训练后","候选与父模型的主指标、当前最差组；必要时补测历史产物","选择新候选、保留父模型或恢复可用历史产物。每轮记录调用与选择依据。"]])+
-         "<p>候选须改善主指标。A 的最差类别召回至多回落 0.01，B/C 的最差组 RMSE 至多上升 2%。当前候选未达条件时，从宿主已声明的历史产物中至多恢复一个，在同轮验证集上重新测量。</p>"+
+         "<p>候选须改善主指标。A 的最差类别召回至多回落 0.01，B/C 的最差组 RMSE 至多上升 2%。当前候选未达条件时，从宿主已声明的历史产物中至多恢复一个，在同轮验证集上重新测量。B 另测关闭校正头后的父 MLP，帮助定位最差轴承的损失来源。</p>"+
          note("SDK 1.0.4 · CPU 单线程 · 每轮一次候选上传 · 单样本预测 · 训练工具白名单。历史产物的可用性由赛方宿主控制。"))
     g=read("gas/comparison.json")
     def grow(name,label):
@@ -100,7 +100,7 @@ def offline_report(doc):
         table(["固定投影","V1 末轮","V2 末轮","轮换最低相对增益","固定十轮 CPU 秒"],rows)+
         "<p>此处用确定性规则从可选算法中择优，测量工业模型候选本身的能力。固定回放连续使用同一公开投影；轮换回放每组每五条留一条审计，剩余行按原顺序分四段，逐轮切换选择集。</p>"+
         "<p>最低相对增益为十轮中相对同段静态起点的最小改善率。训练数据在回放中固定。CPU 计时覆盖续训、候选选择和保存，另行计量审计集预测。</p>"+
-        note("该表为开发期自由选择算法的对照。实际双阶段 Qwen 的工具选择与运行结果另列。"))
+        note("另对两版在相同公开首轮协议环境中各重复三次。CPU 中位秒数（V1 → 最终 V2）为 "+"、".join(f"{k} {r['v1']['cpu_seconds']:.3f} → {r['v2']['cpu_seconds']:.3f}" for k,r in read("paired-resources.json").items())+"；三项 V2 上传字节数均有上升。"))
 def verified_agent():
     records = {}
     for key in "ABC":
@@ -129,8 +129,8 @@ def live_page(doc, records):
                        f"{old['worst']:.3f} → {series[-1]['worst']:.3f}"])
     page(doc,"07   /   MEASURED QWEN DECISIONS","真实 Qwen 决策下的十轮公开漂移回放",
          table(["任务","V1","初版双阶段","最终双阶段","末轮最差组 V1 → 最终"],result)+
-         "<p>三种方案使用相同的公开轮换方案和审计行。A 的主指标为 Macro-F1，最差组取类别召回最小值。B、C 使用总体 RMSE 和设备或子集 RMSE 最大值。表内均为第十轮已部署产物。</p>"+
-         "<p>初版规划器在 C 的十轮中始终选择纯 Adam，末轮 RMSE 为 51.6687。最终规划器增加训练内分组实验结果与成本信息，工具选择仍由 Qwen 根据本轮漂移、近期历史与实测收益作出。</p>"+
+         "<p>V1 使用原算法的确定性选型回放，两版规划器使用真实 PyTRIO 开发回执，三者共用轮换方案和审计行。A 的主指标为 Macro-F1，最差组取类别召回最小值。B、C 使用总体 RMSE 和设备或子集 RMSE 最大值。表内均为第十轮已部署产物。</p>"+
+         "<p>初版规划器在 C 的十轮中始终选择纯 Adam，末轮 RMSE 为 51.6687。最终规划器增加训练内分组实验结果与成本信息，工具选择仍由 Qwen 作出。中间版曾因回复附加多行解释，在 B 首轮把 RMSE 已降至 480.20 的候选退回到 681.16。</p>"+
          note("另从官方检查点在固定公开集做一次双阶段首轮验证，各项主指标为 "+"、".join(f"{k} {records[k,'fixed'][0]['primary']:.4f}" for k in "ABC")+"。"))
 
 
@@ -159,8 +159,8 @@ def decision_cases(doc, records):
     by_key="、".join(f"{k} {min(r['stage_relative_gain'] for r in records[k,'rotating']):.1%}" for k in "ABC")
     page(doc,"08   /   DECISION TRACE","三次实测决策与资源回执",
          table(["任务 / 轮","训练工具 / 步长","父模型 → 新候选","模型选择","实际部署"],rows)+
-         f"<p>30 轮中部署新候选 {adopted} 次，保留父模型 {30-adopted-history_count} 次，采用重新测量的历史产物 {history_count} 次。训练前后共 60 次模型调用，实际返回输入 {inputs:,}、输出 {outputs:,} 个 token。</p>"+
-         f"<p>相对同一阶段静态起点，各任务十轮中最低的主指标改善率为 {by_key}。对较弱阶段保留原始记录，便于复现决策发生时的数据与代价。</p>"+
+         f"<p>30 轮中部署新候选 {adopted} 次，保留父模型 {30-adopted-history_count} 次，恢复经复测的历史产物 {history_count} 次。60 个决策回执含输入 {inputs:,}、输出 {outputs:,} 个 token。开发侧同一轮次、参数和消息复用既有回执；赛方环境每轮发起两次实际调用。</p>"+
+         f"<p>相对同一阶段静态起点，各任务十轮中最低的主指标改善率为 {by_key}。B 加入同轮关闭校正头的对照测量后，最低改善率从 −29.26% 变为 −2.68%，V1 为 −6.81%。</p>"+
          note("表内指标来自该轮可见验证，前页末轮指标来自独立审计子集。完整实验保存工具、假设、优化器步数、分组指标与模型回复。"))
 
 
@@ -189,7 +189,7 @@ def video(report, out, records):
         folder=Path(temp)
         doc.select([0,1,2,3,4,5,6])
         if records:
-            event=next((r for r in records["C","rotating"] if r["deployed"]=="candidate"),records["C","rotating"][0])
+            event=next((r for r in records["C","rotating"] if r["deployed"]=="history"),records["C","rotating"][0])
             p=event["plan"]
             page(doc,"08   /   QWEN TRACE",f"C 第 {event['round']} 轮 · 模型的实际选择",
                  "<p>本轮训练前回复</p><p>"+html.escape(event["planner_response"][:280])+"</p>"+

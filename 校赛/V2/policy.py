@@ -102,10 +102,12 @@ def plan_request(key, index, diagnosis, has_head):
     actions = "refit=Adam+new tested head (costly); adam=Adam only (cheap)"
     if has_head:
         actions += "; continue=Adam+existing head (cheap)"
+    probe = ("Both positive disable_head gains support trying adam (removes the harmful head). "
+             if "disable_head_probe" in diagnosis else "")
     content = (f"{key}{index}: {METRIC[key]}. {actions}. Training-fold evidence: {evidence[key]}. "
                "Use evidence for cold start; after negligible refit gains consider cheaper continuation. "
                "Respond ONE line, e.g. refit|half|correct sensor bias. Middle field is literally full or half. Give your own short drift hypothesis. "
-               + _pack(diagnosis))
+               + probe + _pack(diagnosis))
     return [{"role": "user", "content": content}]
 
 
