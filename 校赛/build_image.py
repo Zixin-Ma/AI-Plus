@@ -20,14 +20,20 @@ def add(archive, name, data, mode=0o644):
     archive.addfile(info, io.BytesIO(data))
 
 
-def main():
+def main(version='v1'):
     deps = WORK / "tools"
     base = deps / "base.tar"
     wheel, = deps.glob("numpy-2.2.6-cp312-*.whl")
     if hashlib.sha256(wheel.read_bytes()).hexdigest() != WHEEL_SHA:
         raise ValueError("unexpected NumPy wheel")
-    out = WORK / "delivery"
-    out.mkdir(exist_ok=True)
+    if version not in ("v1", "v2"):
+        raise ValueError("unknown version")
+    out = WORK / ("delivery" if version == "v1" else "v2/delivery")
+    files = sorted((ROOT / "app").glob("*.py"))
+    if version == "v2":
+        files = [f for f in files if f.name != "contest_submission.py"]
+        files.extend(ROOT / "V2" / (name + ".py") for name in ("contest_submission", "policy", "gas", "bearing", "engine"))
+    out.mkdir(exist_ok=True, parents=True)
     with tempfile.TemporaryDirectory(dir=WORK) as tmp:
         layer = Path(tmp) / "app.tar"
         with tarfile.open(layer, "w") as archive, zipfile.ZipFile(wheel) as pkg:
@@ -39,7 +45,7 @@ def main():
             for file in sorted((WORK / "sdk/contest_harness").glob("*.py")):
                 add(archive, "app/contest_harness/" + file.name, file.read_bytes())
             add(archive, "app/harness.py", (WORK / "sdk/template/harness.py").read_bytes())
-            for file in sorted((ROOT / "app").glob("*.py")):
+            for file in files:
                 add(archive, "app/" + file.name, file.read_bytes())
         tmp_image = Path(tmp) / "image.tar"
         with tarfile.open(base) as src, tarfile.open(tmp_image, "w") as dst:
@@ -69,10 +75,13 @@ def main():
             raw = json.dumps(config, separators=(",", ":")).encode()
             cname = hashlib.sha256(raw).hexdigest() + ".json"
             add(dst, cname, raw)
-            add(dst, "manifest.json", json.dumps([{"Config":cname,"RepoTags":["bjtu-rsi:campus-v1"],"Layers":layers}]).encode())
+            add(dst, "manifest.json", json.dumps([{"Config":cname,"RepoTags":[f"bjtu-rsi:campus-{version}"],"Layers":layers}]).encode())
         tmp_image.replace(out / "harness.tar")
     print(out / "harness.tar")
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--version', choices=['v1','v2'], default='v1')
+    main(parser.parse_args().version)

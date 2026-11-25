@@ -16,7 +16,7 @@ sys.path.insert(0, str(WORK / "sdk"))
 from tests.support import Host
 
 
-def check(root, key):
+def check(root, key, version='v1'):
     data, previous, model = [root / n for n in ("data", "previous", "model")]
     for d in (data, previous, model):
         d.mkdir(exist_ok=True)
@@ -27,11 +27,13 @@ def check(root, key):
     task = "classification" if key == "A" else "regression"
     for name in ("train.jsonl", "validation.jsonl"):
         shutil.copyfile(WORK/key/"public"/name, data/name)
+    history = []
     for i in [1, 2]:
         for f in previous.iterdir():
             f.unlink()
         parent = WORK/key if i == 1 else model
-        names = ["checkpoint.npz"] + (["residual.npz"] if (parent/"residual.npz").is_file() else [])
+        aux = "head.npz" if version == "v2" else "residual.npz"
+        names = ["checkpoint.npz"] + ([aux] if (parent/aux).is_file() else [])
         entries = []
         for name in names:
             shutil.copyfile(parent/name, previous/name)
@@ -44,17 +46,43 @@ def check(root, key):
         env = {"PATH":"/usr/local/bin:/usr/bin:/bin", "OPENBLAS_NUM_THREADS":"1", "OMP_NUM_THREADS":"1"}
         proc = subprocess.Popen(launch("train"), stdin=subprocess.PIPE,stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE,text=True,env=env)
-        agent = Host(frame,lambda *_: {"request_id":"replay-only","choices":[{"message":{"content":
-                         '{"choice":"candidate","reason":"SDK integration replay."}'}}]})
+        call_ids = []
+        if version == "v2":
+            # Exercise two legitimate planner actions across consecutive rounds.
+            plan = ("refit|full|Improve validation with a refreshed correction." if i == 1
+                    else "adam|half|Test a modest backbone-only update.")
+            responses = [plan, "candidate|Use measured improvement."]
+        else:
+            responses = ['{"choice":"candidate","reason":"SDK integration replay."}']
+
+        def answer(messages, options):
+            ordinal = len(call_ids)
+            call_id = f"replay-{key}-{i}-{ordinal + 1}"
+            call_ids.append(call_id)
+            return {"request_id": call_id, "choices": [{"message": {"content": responses[ordinal]}}]}
+
+        agent = Host(frame, answer, history=history)
         thread = agent.serve(proc)
         code = proc.wait(timeout=180)
         thread.join(5)
         if code or agent.failure or not agent.record:
             raise RuntimeError((agent.failure, proc.stderr.read()))
+        assert len(call_ids) == len(responses)
+        assert agent.record["model_call_ids"] == call_ids
+        assert agent.record["history_ids"] == [r["id"] for r in history]
+        if version == "v2":
+            config = agent.record["configuration"]
+            assert config["plan"]["tool"] == ("refit" if i == 1 else "adam")
+            assert config["plan"]["strength"] == ("full" if i == 1 else "half")
+            assert not config["plan"]["fallback"] and config["steps"] > config["old_steps"]
+            assert {"candidate", "parent"} <= set(config["scores"])
+            assert config["deployed"] in ("parent", "candidate")
+        history.append({"id": f"round-{key}-{i}", **agent.record})
         candidate, = (root/"workspace").glob("candidate-*")
         for f in model.iterdir():
             f.unlink()
-        for p in candidate.iterdir():
+        chosen = candidate if agent.record['selected_artifact_id'] == 'model-test-1' else previous
+        for p in chosen.iterdir():
             shutil.copyfile(p, model/p.name)
         shutil.rmtree(candidate)
         child = subprocess.Popen(launch("predict"),stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,env=env)
@@ -67,13 +95,14 @@ def check(root, key):
             assert (isinstance(value,list) and len(value)==6) if key=="A" else (value["value"]>=0)
         child.stdin.close()
         assert child.wait(timeout=5)==0
-        print(f"{key} round {i}: SDK train, parent digest, candidate upload, acknowledgement and streaming predict OK", flush=True)
+        print(f"{key} round {i}: SDK train, parent digest, candidate upload, "
+              f"{len(call_ids)} model receipt(s), acknowledgement and streaming predict OK", flush=True)
 
 
-def main():
+def main(version='v1'):
     with tempfile.TemporaryDirectory(dir=WORK) as tmp:
         root=Path(tmp)
-        archive=WORK/"delivery/harness.tar"
+        archive=WORK/("v2/delivery/harness.tar" if version == "v2" else "delivery/harness.tar")
         with archive.open("rb") as file:
             export=subprocess.Popen([str(WORK/"tools/crane"),"export","-","-"],stdin=file,stdout=subprocess.PIPE)
             extract=subprocess.run(["tar","-xf","-","-C",tmp],stdin=export.stdout)
@@ -91,8 +120,11 @@ def main():
             (root/"model").mkdir(exist_ok=True)
             for p in (root/"model").iterdir():
                 p.unlink()
-            check(root,key)
+            check(root,key,version)
 
 
 if __name__=="__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--version', choices=['v1','v2'], default='v1')
+    main(parser.parse_args().version)
