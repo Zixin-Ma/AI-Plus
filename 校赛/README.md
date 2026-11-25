@@ -49,3 +49,9 @@ python -B verify_image.py
 ## 交付包
 
 开发侧从本目录执行 `/root/miniconda3/envs/M2Gaze/bin/python -B make_materials.py`，使用 PyMuPDF 1.28.2 和 FFmpeg，将真实实验记录与镜像验收记录编入技术报告和 60 秒演示。运行 `package_delivery.py` 将源码、运行说明、研究依据与来源声明打包，并生成内嵌源码与视频的独立作品文档（PDF 附件面板可打开）。提交镜像独立上传。公开实验与本次归档均在 BJTU 上生成。
+
+## 校赛报名材料
+
+运行 `/root/miniconda3/envs/M2Gaze/bin/python -B build_registration.py` 生成图示七项分栏材料，输出位于忽略目录 `work/registration-v1/`。依赖为 PyMuPDF 1.28.2、python-pptx 1.0.2、python-docx 1.2.0。PDF 渲染与 Office 成品预览保存在该目录的 qa 子目录。
+
+镜像超过 50 MB，使用 `--image-share-url` 参数将经核实的 Google Drive 下载链接写入第二项 Word 附件。未提供链接时，文件明确标记为待补链接。模型与算法仍对应已提交的 v1。材料引用完整试运行的冻结证据，正式评测以赛方后续发布为准。
