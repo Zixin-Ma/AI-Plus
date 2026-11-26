@@ -1,0 +1,7 @@
+企业赛 V1
+Harness SDK 1.0.4，contest.harness.workspace.v2
+驱动模型 Qwen/Qwen3.8-27B，官方基础模型，赛方 host_gateway_rpc
+temperature=0，enable_thinking=false，规划最大输出 56，裁决最大输出 32
+CPU 工业模型从赛方检查点续训。NumPy 2.2.6，Linux/amd64，单线程
+镜像 bjtu-rsi:enterprise-v1
+启动 python3 /app/harness.py describe|train|predict
