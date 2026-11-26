@@ -1,0 +1,10 @@
+企业赛 V2 模型配置
+镜像标签 bjtu-rsi:enterprise-v2
+架构 Linux/amd64，Python 3.12，NumPy 2.2.6，Harness SDK 1.0.4，CPU 单线程，容器用户 65534:65534。
+协议 contest.harness.workspace.v2。宿主通过 host_gateway_rpc 提供 Qwen/Qwen3.8-27B。
+解码 temperature=0，enable_thinking=false。规划最多 56 个输出 Token，裁决最多 32，均受宿主限额约束。稳定且满足条件时复用既有规划。
+训练从宿主给出的父产物加载 MLP、归一化及 Adam 状态，按获准输入执行重拟合、沿用任务校正头续训或骨干 Adam 更新。候选与父模型在当前可见验证投影上测量。
+A 六类气体分数。候选包括 V1 分类头及气体动力学曲线与类内子空间。
+B 以分钟为单位输出非负轴承剩余寿命。用振动阶次和寿命支持控制校正，新增数据时限制寿命分位预测移动。
+C 以循环数输出非负发动机剩余寿命。按工况归一化，同一训练池与新增训练池使用不同校正头调度。
+镜像入口 python3 /app/harness.py，命令 describe、train、predict。训练和推理的输入、回执、历史和工作目录由赛方 SDK 提供。
