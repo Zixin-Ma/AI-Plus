@@ -54,6 +54,16 @@ def main():
             data["positive_floor"]=[sum(r["stage_floor"]>1e-9 for r in rows) for rows in runs]
             data["stages"]=[paired(*[[r["stage_means"][idx] for r in rows] for rows in runs])
                             for idx in range(len(runs[0][0]["stage_means"]))]
+            old_weak, new_weak=[],[]
+            weak_ids=[]
+            for left,right in zip(*runs,strict=True):
+                stage=min(range(len(left["stage_means"])),key=left["stage_means"].__getitem__)
+                old_weak.append(left["stage_means"][stage])
+                new_weak.append(right["stage_means"][stage])
+                weak_ids.append(stage+1)
+            data["v5_weakest_stage_followup"]=paired(old_weak,new_weak)
+            data["v5_weakest_stage_ids"]=weak_ids
+            data["floor_range"]=[[min(r["stage_floor"] for r in rows),max(r["stage_floor"] for r in rows)] for rows in runs]
             results[case+"/"+key]=data
     write("scorecard.json",results)
 

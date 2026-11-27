@@ -1,4 +1,5 @@
 """Time one JSON-line request at a time through the released image's real SDK."""
+import argparse
 import json
 import os
 from pathlib import Path
@@ -68,6 +69,9 @@ def warm_and_measure(root, source, key, lines):
 
 
 def main():
+    parser=argparse.ArgumentParser()
+    parser.add_argument("--repeat-session",action="store_true")
+    args=parser.parse_args()
     cpus = sorted(os.sched_getaffinity(0))
     os.sched_setaffinity(0, {cpus[7 % len(cpus)]})
     results = []
@@ -92,7 +96,7 @@ def main():
                 np.testing.assert_allclose(old,new,rtol=1e-9,atol=1e-8)
                 if key=="A":
                     np.testing.assert_array_equal(old.argmax(axis=1),new.argmax(axis=1))
-    path=WORK/"v6/sdk-latency.json"
+    path=WORK/"v6"/("sdk-latency-repeat.json" if args.repeat_session else "sdk-latency.json")
     path.write_text(json.dumps(dict(cpu=sorted(os.sched_getaffinity(0)),rows=results),indent=2))
 
 

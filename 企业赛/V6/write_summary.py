@@ -15,7 +15,7 @@ def main():
     official=read("official-reference.json")
     buf=["# 企业赛 V6 冻结验证","",notes["decision"],"",
          "V5 官网正式总分 23.034385 / 35。漂移综合 9.079221，最差阶段 0，恢复 3.968254，稳定与抗遗忘 4.986910，资源效率 5。A、B、C 的最低阶段收益分别为 −0.375977、−0.211668、−0.358173。原始网站报告与 V5 本地正式评测分析已交叉核对。","",
-         "实验从 V5 冻结镜像和源码出发，三条路线分别做开发和消融，随后锁定生产源码、评测器、九个输入文件及划分。六种协议、七个开发顺序和六个新确认顺序共有 234 对十轮流，独立复算 4,680 个逐轮记录。下文所有 V6 数据来自服务器本地。","",
+         "实验从 V5 冻结镜像和源码出发，三条路线分别做开发和消融，随后锁定生产源码、评测器、九个输入文件及划分。六种协议、七个开发顺序和六个预留确认编号共有 234 对十轮流，独立复算 4,680 个逐轮记录。下文所有 V6 数据来自服务器本地。","",
          "## 冻结后按官网日程回放","",
          "|任务|阶段等权平均收益 V5 → V6|最低阶段收益 V5 → V6|最低阶段上升／持平／下降的划分数|",
          "|---|---:|---:|---:|"]
@@ -41,6 +41,25 @@ def main():
     for m in ("schedule","trace","official","drift","fresh","fresh-measured"):
         v=score[m+"/C"]["nasa"];buf.append(f"|{m}|{v['v5']:,.1f}|{v['v6']:,.1f}|{100*(v['v6']/v['v5']-1):+.1f}%|")
     buf+=["","## 版本结论","",notes["recommendation"],"","企业赛 V5 官网正式运行 ID 为 "+official["run"]+"。官网 V4/V5 试运行、V5 正式客观分和逐阶段指标的可读摘录见证据包 official-reference.json；全量原始对照仍保存在企业赛/work/v5/formal 及 platform。","","完整配对结果见 scorecard.json、audit.json 和 replay/。公开决策回放采用确定性宿主。镜像走 SDK 真实的 train、predict 和工件回滚路径；这次本地研究没有调用付费大模型，也没有提交平台试运行或正式评测。",""]
+    buf+=["## 官网最弱阶段编号与本地对应编号","","公开数据与官网隐藏样本没有工况身份映射。下表仅按编号对齐，并列示各流最低阶段转为正收益的划分数。切片共享同一公开池，六个划分的计数用于描述波动。","","|任务|官网最弱阶段|本地同编号阶段 V5 → V6|V5 正低谷数|V6 正低谷数|","|---|---:|---:|---:|---:|"]
+    for k in "ABC":
+        view=score["schedule/"+k]
+        official_stages=official["tasks"][k]["stage_gains"]
+        weak=official_stages.index(min(official_stages))
+        pos=view["positive_floor"]
+        buf.append(f"|{k}|{weak+1}|{fmt(view['stages'][weak])}|{pos[0]}/6|{pos[1]}/6|")
+    grid=read("bearing-grid/summary.json")
+    buf+=["","B 的六个预留编号中，有三个与开发期具有完全相同的审计窗口。为核验这一点，冻结后等权枚举三台验证轴承在该规则下全部 27 种不同取窗组合。","","|轴承审计范围|组合数|阶段平均 V5 → V6|最低阶段 V5 → V6|最低改善数|","|---|---:|---:|---:|---:|"]
+    for label,key in [("全部不同窗口","all"),("0–19 中从未出现","new_masks")]:
+        v=grid[key]
+        buf.append(f"|{label}|{v['masks']}|{fmt(v['stage_mean'])}|{fmt(v['stage_floor'])}|{v['stage_floor']['increased']}|")
+    buf+=["","全部窗口中，最弱阶段高于公开静态参照的组合从 4/27 增至 10/27。公开第三工况的平均收益 20.19% → 16.88%，其审计设备与官网相同编号是否对应未知。"]
+    buf+=["","## 完整首批的整组留出","","两版从正式公开起点和完整训练池开始。每次在模型选择中排除一个完整审计组，固定这组样本及其余选型样本，按官网首阶段记录向离线规划器提供相同动作。实际是否重新拟合、沿用父产物及何时部署，均由各自 Harness 决定；复核时根据可见验证指标选取允许的产物。每组先在该阶段内的各轮取平均，再计算组间均值和最小值。","","|任务|组数 × 轮数|每组平均收益 V5 → V6|最弱组收益 V5 → V6|","|---|---:|---:|---:|"]
+    for k in "ABC":
+        ds=[read("opening-history/"+v+"-"+k+".json") for v in ("v5","v6")]
+        a,b=[[z["mean_gain"] for z in g] for g in ds]
+        buf.append(f"|{k}|{len(a)} × {len(ds[0][0]['rounds'])}|{100*st.mean(a):.2f}% → {100*st.mean(b):.2f}%|{100*min(a):.2f}% → {100*min(b):.2f}%|")
+    buf+=["","A 的八组是同一批样本中的类内采集顺序段。B 的三个载荷在公开验证池各自仅对应一台设备。C 的四组来自不同 FD 子集。额外整组留出诊断未用于选型，单独归档，不计入 234 对主协议。",""]
     dest=OUT/"delivery/企业赛V6验证汇总.md"
     dest.parent.mkdir(exist_ok=True,parents=True)
     dest.write_text("\n".join(buf))

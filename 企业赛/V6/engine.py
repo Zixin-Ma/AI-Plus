@@ -50,16 +50,23 @@ def fit_neural(model, x, y, limit=24576, epochs=20, width=48, ordinal_weight=.7,
     cov = sensors.T @ sensors / len(sensors)
     eigenvalues, axes = np.linalg.eigh(cov)
     active = np.flatnonzero(eigenvalues > .035)
-    chosen = np.unique(np.r_[active[:3], active[-3:]])
-    axes = axes[:,chosen] / np.sqrt(eigenvalues[chosen]+.10)
-    sensors = np.column_stack((sensors, _curvature_features(sensors, axes)))
+    curve_axis = None
+    if len(active) >= 6:
+        chosen = np.r_[active[:3], active[-3:]]
+        curve_axis = axes[:, chosen] / np.sqrt(eigenvalues[chosen] + .10)
+        sensors = np.column_stack((sensors, _curvature_features(sensors, curve_axis)))
     base = model.predict(x).reshape(-1)
     design = np.column_stack((sensors, (base - 100) / 60, np.eye(len(centers))[groups])).astype(np.float32)
     target = ((y - base) / 55).astype(np.float32)
     thresholds = np.quantile(y, [.20, .45, .70])
     near_threshold = (y[:, None] < thresholds).astype(np.float32)
 
-    weights = rng.normal(0, .22, (design.shape[1], width)).astype(np.float32)
+    # The initial predictor and RNG state match the original head. Curvature
+    # channels start at zero and are activated by gradients from released rows.
+    weights = rng.normal(0, .22, (sensor_count + 1 + len(centers), width)).astype(np.float32)
+    if curve_axis is not None:
+        zeros = np.zeros((curve_axis.shape[1], width), dtype=np.float32)
+        weights = np.vstack((weights[:sensor_count], zeros, weights[sensor_count:]))
     bias = np.zeros(width, dtype=np.float32)
     # Column zero predicts the standardised residual; other columns supervise
     # rank at three training-only lifetime thresholds for the optional stable-pool ordinal readout.
@@ -96,9 +103,10 @@ def fit_neural(model, x, y, limit=24576, epochs=20, width=48, ordinal_weight=.7,
                 w_sensor=weights[:-len(centers)-1].copy(), w_base=weights[-len(centers)-1] / 60,
                 bias=bias + weights[-len(centers):] - weights[-len(centers)-1] * (100 / 60),
                 output=55 * output[:, 0].astype(float), intercept=55 * intercept[:1].astype(float))
-    head["curve_axis"] = axes
-    head["curve_weight"] = head["w_sensor"][sensor_count:].copy()
-    head["w_sensor"] = head["w_sensor"][:sensor_count].copy()
+    if curve_axis is not None:
+        head["curve_axis"] = curve_axis
+        head["curve_weight"] = head["w_sensor"][sensor_count:].copy()
+        head["w_sensor"] = head["w_sensor"][:sensor_count].copy()
     if stable:
         head.update(ord_out=output[:,1:].astype(float), ord_bias=intercept[1:].astype(float))
     return head
@@ -124,7 +132,7 @@ def fit(model, x, y, index, previous=None, stable_release=False):
         if "ord_coef" not in state:
             state.pop("ord_out")
             state.pop("ord_bias")
-    return state
+    return _calibrate_output(model, state, x, y, stable)
 
 
 def _residual(head, z, base, group):
@@ -203,16 +211,92 @@ def predict(model, head, x):
     return prior
 
 
-def _calibrate_ordinal(model, head, x, y):
-    # The network takes exactly the same deterministic draw. Calibrate only on
-    # released training rows it did not fit; small pools retain the original head.
-    if len(y) < 24576+512:
-        return head
+def _reserve_rows(n, separate_ordinal=False):
+    if n < 24576 + 512:
+        return np.empty(0, dtype=int)
     rng = np.random.default_rng(145)
-    kept = np.ones(len(y), dtype=bool)
-    kept[rng.choice(len(y), 24576, replace=False)] = False
-    pool = np.flatnonzero(kept)
-    ids = rng.choice(pool, min(len(pool), 16384), replace=False)
+    free = np.ones(n, dtype=bool)
+    free[rng.choice(n, 24576, replace=False)] = False
+    pool = np.flatnonzero(free)
+    ordinal = rng.choice(pool, min(len(pool), 16384), replace=False)
+    if not separate_ordinal:
+        return ordinal
+    free[ordinal] = False
+    pool = np.flatnonzero(free)
+    if len(pool) < 512:
+        return np.empty(0, dtype=int)
+    return np.random.default_rng(621).choice(pool, min(16384, len(pool)), replace=False)
+
+
+def _calibrate_output(model, head, x, y, stable):
+    """Fit a readout update on reserved rows, then check lifetime bands and both cost tails."""
+    ids = _reserve_rows(len(y), separate_ordinal=stable)
+    if not len(ids):
+        return head
+    xx, target = x[ids], y[ids]
+    error = predict(model, head, xx) - target
+    base = model.predict(xx).reshape(-1)
+    _, hidden = _ordinal_hidden(model, head, xx)
+    raw = hidden @ head["output"] + head["intercept"][0]
+    value = np.maximum(0., base + np.clip(raw, -65., 65.))
+    tail = np.maximum(0., value-head["health_hi"]) + np.minimum(0., value-head["health_lo"])
+    amp = .2 * float(head["health_amp"])
+    pre = np.maximum(0., value + np.clip(amp*tail, -25., 25.))
+    slope = ((np.abs(raw) < 65.) & (value > 0.)).astype(float)
+    slope *= 1 + amp*((tail != 0.) & (np.abs(amp*tail) < 25.))
+    slope *= np.where(pre > base, float(head["extension_fraction"]), 1.)
+    jac = np.column_stack((hidden, np.ones(len(ids)))) * slope[:,None]
+    bands = np.searchsorted(np.quantile(target, [.2, .4, .6, .8]), target)
+    fit_rows = np.arange(len(ids)) % 2 == 0
+    check = ~fit_rows
+
+    def band_ratios(err, rows):
+        groups = bands[rows]
+        loss = np.bincount(groups, weights=err[rows]**2, minlength=5)
+        reference = np.bincount(groups, weights=(base[rows]-target[rows])**2, minlength=5)
+        return loss / (100. + reference)
+
+    ratios = band_ratios(error, fit_rows)
+    importance = np.exp(np.clip(2.5*(ratios - ratios.mean()), -1.5, 1.5))
+    importance /= importance.mean()
+    weights = (.5 + .5*importance[bands])[fit_rows]
+    j, e = jac[fit_rows], error[fit_rows]
+    curvature = j.T @ (j*weights[:,None])/len(j) + np.eye(j.shape[1])*.06
+    delta = np.linalg.solve(curvature, -j.T @ (weights*e)/len(j))
+    normals = []
+    for sign, scale in ((1., 10.), (-1., 13.)):
+        exponent = sign*e/scale
+        for trim in (.975, .998):
+            v = sign*np.where(exponent > 0., np.exp(np.minimum(exponent, np.quantile(exponent, trim))), 0.)
+            normal = v @ j / max(1., np.abs(v).sum())
+            dual = np.linalg.solve(curvature, normal)
+            normals.append((normal, dual, max(1e-10, normal @ dual)))
+    for _ in range(12):
+        for normal, dual, denom in normals:
+            delta -= max(0., normal @ delta)*dual/denom
+    delta /= max(1., np.sqrt(np.mean((j @ delta)**2))/6.)
+
+    def tails(err):
+        return np.array([np.mean(np.expm1(np.clip(sign*err[check]/scale, 0., 16.)))
+                         for sign, scale in ((1., 10.), (-1., 13.))])
+
+    ceiling = tails(error)*1.025
+    max_band = band_ratios(error, check).max() + .002
+    max_error = np.mean(error[check]**2)*1.0005
+    for step in (.8, .45, .2):
+        updated = dict(head, output=head["output"] + step*delta[:-1],
+                       intercept=head["intercept"] + step*delta[-1])
+        trial = predict(model, updated, xx) - target
+        if (np.mean(trial[check]**2) <= max_error and band_ratios(trial, check).max() <= max_band
+                and np.all(tails(trial) <= ceiling)):
+            return updated
+    return head
+
+
+def _calibrate_ordinal(model, head, x, y):
+    ids = _reserve_rows(len(y))
+    if not len(ids):
+        return head
     xx = x[ids]
     prior = predict(model, head, xx)
     group, hidden = _ordinal_hidden(model, head, xx)

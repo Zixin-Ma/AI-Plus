@@ -55,7 +55,17 @@ def report():
         p.insert_text((778,578),str(len(doc)),fontsize=9)
     page("V6 的起点与本地验证范围",para(f"V5 官网正式成绩 {official['objective_score']:.6f} / 35，最差阶段 0 / 5。V6 的试验以提升三项低谷、提高 A/B 平均收益、保住 C 平均收益为目标。")+
          table(["任务","V5 官网平均阶段收益","V5 官网最低阶段收益","对应阶段"],[[NAMES[k],f"{v['mean_gain']:.6f}",f"{v['worst_gain']:.6f}",v["stage_gains"].index(v["worst_gain"])+1]for k,v in official["datasets"].items()])+
-         para(overview["decision"])+para(f"全矩阵核验 {audit['pairs']} 对十轮流、{audit['observations']} 个逐轮记录。六个预留顺序在冻结后执行，共享官方公开样本。V6 仅在服务器本地评估。"))
+         para(overview["decision"])+para(f"全矩阵核验 {audit['pairs']} 对十轮流、{audit['observations']} 个逐轮记录。六个预留编号在冻结后执行，共享官方公开样本。V6 仅在服务器本地评估。"))
+    score=read(WORK/"scorecard.json")
+    rows=[]
+    for k in "ABC":
+        v=score["schedule/"+k]
+        a,b=v["stage_mean"],v["stage_floor"]
+        sign=v["positive_floor"]
+        rows.append([NAMES[k],pair(a["v5"],a["v6"]),pair(b["v5"],b["v6"]),f"{b['increased']} / {b['tied']} / {b['decreased']}",f"{sign[1]} / 6"])
+    page("按官网日程回放的最低阶段",table(["任务","阶段平均收益 %","最低阶段收益 %","提高 / 持平 / 下降","V6 低谷为正"],rows)+
+         para("每列先对同一顺序和同一任务的 V5、V6 配对，再汇总六个冻结后预留划分。平均列与最低列都对阶段等权。各划分共享公开数据。")+
+         para(overview["schedule_interpretation"])+para("A 的公开审计仅含一个气体批次。B 每个载荷仅对应一台公开验证设备。C 按四个 FD 子集分组。数字相同的阶段编号不保证对应相同的隐藏工况。"))
     for k in "ABC":
         rows=[]
         for case,name in CASES.items():
@@ -74,7 +84,7 @@ def report():
         rows.append([NAMES[k],len(ds[0]),pair(*[st.mean(z["gain"]for z in dd) for dd in ds]),pair(*[min(z["gain"]for z in dd) for dd in ds])])
     page("首轮对完整留出工况的迁移",table(["任务","审计组数","平均相对收益 %","最弱组相对收益 %"],rows)+
          para("两版从官方检查点和完整首批训练集起跑，每次拿出一组公开验证数据完全排除在选型之外。A 按类内采集顺序八等分，B 按三种载荷/转速，C 按四个 FD 源子集。分组仅供审计，预测端只接收输入特征。")+
-         para("官网 A 有八个隐藏阶段，B 有三个，C 有四个。公开气体验证行仅来自同一批次，跨设备、跨日表现见分项补充数据实验；公开编号与隐藏工况没有已知一一对应。真实 V6 五项分数仍取决于平台评测。"))
+         para(overview["opening_history"])+para("官网 A 有八个隐藏阶段，B 有三个，C 有四个。公开气体验证行仅来自同一批次，跨设备、跨日表现见分项补充数据实验；公开编号与隐藏工况没有已知一一对应。真实 V6 五项分数仍取决于平台评测。"))
     card=read(WORK/"scorecard.json")
     rows=[]
     for case,name in CASES.items():
@@ -82,6 +92,15 @@ def report():
         rows.append([name,f"{d['v5']:,.1f}",f"{d['v6']:,.1f}",f"{100*(d['v6']/d['v5']-1):+.1f}%"])
     page("发动机的非对称误差成本",table(["确认协议","V5 每行 NASA","V6 每行 NASA","相对变化"],rows)+
          para("对每个样本按高估和低估分别使用 10 和 13 循环的指数尺度，先在当前阶段审计样本内取平均，再对十轮和六个划分等权。官网最终 NASA 使用隐藏测试样本求和。"))
+    grid=read(WORK/"bearing-grid/summary.json")
+    rows=[]
+    for label,data in [("全部不同组合",grid["all"]),("此前未见组合",grid["new_masks"])]:
+        lo=data["stage_floor"];avg=data["stage_mean"]
+        rows.append([label,data["masks"],pair(avg["v5"],avg["v6"]),pair(lo["v5"],lo["v6"]),lo["increased"]])
+    page("轴承低谷的全部窗口组合",table(["覆盖范围","组合数","阶段平均 %","阶段最低 %","低谷改善数"],rows)+
+         para("六个预留编号中，有三个碰巧复用了开发期的审计窗口。本项在模型冻结后，枚举三台公开验证轴承按既定取窗规则能形成的全部 27 个组合。每个组合等权；其中 18 个在 0–19 号划分中从未出现。")+
+         para("全 27 组中，最低阶段为正的组合从 4 个增至 10 个。三个工况的收益依次从 −4.14%、−9.42%、20.19% 变为 −0.47%、−3.13%、16.88%。总体低谷的改善集中在前两个公开工况，第三个工况有所回落。")+
+         para("不同窗口共享同三台设备。这一穷举检验回答取窗方式会不会改变结论；外部整机证据与官网隐藏第三阶段的推断范围另见验证汇总。"))
     refs=read(WORK/"official-reference.json")
     rows=[]
     for name,src in [("V4 试运行",refs["trials"]["V4"]["tasks"]),("V5 试运行",refs["trials"]["V5"]["tasks"]),("V5 正式",refs["final_metrics"])]:
@@ -124,7 +143,7 @@ def main():
         for f in sorted(WORK.rglob("*.json")):
             if any(t in f.relative_to(WORK).parts for t in ("delivery","serving-assets")):continue
             z.write(f,f.relative_to(WORK))
-        for name in ("gas-qualified-4.log","gas-qualified-5.log","gas-qualified-6.log","gas-qualified-7.log"):
+        for name in ("integrated-4.log","integrated-5.log","integrated-6.log","integrated-7.log"):
             z.write(WORK/name,"contracts/"+name)
         z.write(WORK/"image-proof-0.log","image-proof-0.log")
         for f in sorted(HERE.glob("*.md")):z.write(f,"说明/"+f.name)

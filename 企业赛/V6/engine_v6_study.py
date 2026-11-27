@@ -1,6 +1,7 @@
 """Ablations for engine longevity under an unchanged V5 controller."""
 import argparse
 import concurrent.futures
+import hashlib
 import importlib.util
 import json
 import os
@@ -520,7 +521,7 @@ def summarize():
                 if not base.exists() or not test.exists():continue
                 def summarize_stream(path):
                     d=json.loads(path.read_text())
-                    row={key:d[key] for key in ("mean","worst","forget","delay")}
+                    row={key:d[key] for key in ("stage_mean","stage_floor","mean","worst","forget","delay")}
                     row.update(nasa=np.mean([r["nasa_mean"] for r in d["rounds"]]),
                                cpu=sum(r["cpu"] for r in d["rounds"]),
                                accepted=sum(r["deployed"]=="candidate" for r in d["rounds"]))
@@ -531,14 +532,13 @@ def summarize():
                 for j,key in [(1,"base"),(2,"candidate")]:
                     g[key]={m:float(np.mean([r[j][m] for r in paired])) for m in paired[0][j]}
                     g[key]["lowest"]=min(r[j]["worst"] for r in paired)
-                g["wins"]={m:int(sum((r[2][m]-r[1][m])*(1 if m in ("mean","worst","accepted") else -1)>1e-10 for r in paired)) for m in paired[0][1]}
+                g["wins"]={m:int(sum((r[2][m]-r[1][m])*(1 if m in ("stage_mean","stage_floor","mean","worst","accepted") else -1)>1e-10 for r in paired)) for m in paired[0][1]}
                 groups[setting]=g
         if groups:methods[folder.name]=groups
     (OUT/"paired.json").write_text(json.dumps(methods,indent=2))
 
 
 def verify(expected):
-    import hashlib
     result=[]
     for dataset in ("official","DS02"):
         x,y,audit,age,_,_,m=prior.evaluation_data(dataset)
@@ -558,6 +558,45 @@ def verify(expected):
                                batch_delta=float(np.max(abs(live-target))),scalar_delta=float(np.max(abs(sc-target)))))
             prev_ref=ref;prev_live=h
     (OUT/(expected+"-runtime.json")).write_text(json.dumps(dict(sha256=hashlib.sha256(Path(engine.__file__).read_bytes()).hexdigest(),tests=result),indent=2))
+
+
+def verify_legacy():
+    """Load original V5 arrays and compare V5/V6 batch and scalar serving."""
+    x,y,audit,_,_,_,m=prior.evaluation_data("official")
+    selected=x[audit][np.linspace(0,audit.sum()-1,512,dtype=int)]
+    previous=None
+    result=[]
+    for i in (1,2):
+        head=v5.fit(m,x[~audit],y[~audit],i,previous=previous,stable_release=i==2)
+        reference=v5.predict(m,head,selected)
+        current=engine.predict(m,head,selected)
+        one=engine.prepare_inference(m,head)
+        single=np.array([one(row) for row in selected])
+        np.testing.assert_allclose(current,reference,rtol=1e-10,atol=1e-8)
+        np.testing.assert_allclose(single,reference,rtol=1e-10,atol=1e-8)
+        result.append(dict(round=i,rows=len(selected),batch_delta=float(max(abs(current-reference))),
+                           scalar_delta=float(max(abs(single-reference)))))
+        previous=head
+    (OUT/"v5-compatibility.json").write_text(json.dumps(result,indent=2))
+
+
+def audit_streams():
+    """Verify that the frozen head reproduces all development decisions and outcomes."""
+    fields = ("stage_mean", "stage_floor", "mean", "worst", "forget", "delay")
+    round_fields = ("stage", "train", "selection", "audit", "deployed", "static", "metrics", "nasa_mean")
+    pairs = []
+    for setting in ("drift", "trace", "schedule"):
+        for split in range(14):
+            name = f"{setting}-v6-C-{split}.json"
+            reference, production = [json.loads((OUT/route/name).read_text()) for route in ("nestread","frozen")]
+            assert all(reference[k] == production[k] for k in fields), name
+            assert len(production["rounds"]) == 10
+            for old,new in zip(reference["rounds"],production["rounds"],strict=True):
+                assert all(old[k] == new[k] for k in round_fields), name
+            pairs.append(name)
+    sha = hashlib.sha256(Path(engine.__file__).read_bytes()).hexdigest()
+    (OUT/"frozen-stream-audit.json").write_text(json.dumps(
+        dict(sha256=sha,streams=len(pairs),rounds=10*len(pairs),comparisons=pairs), indent=2))
 
 
 def speed():
@@ -585,8 +624,11 @@ def speed():
 if __name__=="__main__":
     p=argparse.ArgumentParser();p.add_argument("mode");p.add_argument("name",nargs="?",default="");p.add_argument("args",nargs="*");a=p.parse_args()
     if a.mode=="summary":summarize()
-    elif a.mode=="verify":verify(a.name)
+    elif a.mode=="verify":
+        verify(a.name)
+        verify_legacy()
     elif a.mode=="speed":speed()
+    elif a.mode=="audit-streams":audit_streams()
     elif a.mode=="replay":replay(a.name,int(a.args[0]),a.args[1])
     elif a.mode=="probe":probe(a.name,a.args)
     elif a.mode=="grid":grid(a.name.split(","),a.args[0].split(","),list(map(int,a.args[1].split(","))),int(a.args[2]))
