@@ -1,0 +1,30 @@
+{
+  "evaluator_sha256": "c5674e46c6597a1f15b32fa924290d86caa584fc8fa23e8f47391daaa06abe4c",
+  "development": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13
+  ],
+  "confirmation": [
+    14,
+    15,
+    16,
+    17,
+    18,
+    19
+  ],
+  "priority": "A/B increase floor and mean; C increase floor while protecting mean and NASA; measure failures across all protocols. No hidden rows.",
+  "official_run": "80900572e91d7d33d6637088915dc5e6",
+  "note": "Before any confirmation, stratified the gas schedule audit block by seed, class and stage to avoid three repeated partitions across six seeds."
+}
