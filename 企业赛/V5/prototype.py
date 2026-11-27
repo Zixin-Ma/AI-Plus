@@ -138,13 +138,26 @@ def curve_log_score(distance):
     return np.clip(-.3*(distance-distance.min(1, keepdims=True)), -12., 0.)
 
 
+def combine_gas_views(kinetic, raw, fraction):
+    """Downweight the kinetic correction when class-centered evidence disagrees."""
+    k = kinetic-kinetic.mean(axis=-1, keepdims=True)
+    r = raw-raw.mean(axis=-1, keepdims=True)
+    alignment = (k*r).sum(axis=-1, keepdims=True)
+    length = np.sqrt((k*k).sum(axis=-1, keepdims=True)*(r*r).sum(axis=-1, keepdims=True))
+    agreement = np.maximum(0., alignment/np.maximum(length,1e-8))
+    return (1.-fraction+fraction*agreement)*kinetic+raw
+
+
 def robust_score(features, raw, amplitude, state):
     distance = curve_distance(features, amplitude, state, extrapolate=True)
     dimension = state["curve_proj"].shape[1]
     kinetic = curve_log_score(dimension*np.log1p(distance/dimension))
     raw_d = raw_distance(raw, state["log_center"], state["log_scale"],
                          state["log_means"], state["log_axes"])
-    return kinetic - 3*np.log1p(raw_d)
+    raw_log = -3*np.log1p(raw_d)
+    if "agreement_fraction" in state:
+        return combine_gas_views(kinetic,raw_log,float(state["agreement_fraction"]))
+    return kinetic + raw_log
 
 
 def response_shape(readings):

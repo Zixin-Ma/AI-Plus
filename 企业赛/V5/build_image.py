@@ -1,4 +1,8 @@
 """Build a Linux/amd64 Docker-save archive on a server without a Docker daemon."""
+import argparse
+import importlib.util
+import py_compile
+import sys
 import gzip
 import hashlib
 import io
@@ -22,29 +26,46 @@ def add(archive, name, data, mode=0o644):
     archive.addfile(info, io.BytesIO(data))
 
 
+def add_runtime(archive, name, data, mode, temp, cache):
+    add(archive, name, data, mode)
+    if cache and name.endswith(".py"):
+        source, compiled = temp/"source.py", temp/"source.pyc"
+        source.write_bytes(data)
+        py_compile.compile(str(source), cfile=str(compiled), dfile="/"+name, doraise=True,
+                           invalidation_mode=py_compile.PycInvalidationMode.CHECKED_HASH)
+        add(archive, importlib.util.cache_from_source(name), compiled.read_bytes())
+
+
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--no-bytecode", action="store_true", help="build the matched control image")
+    args = parser.parse_args()
+    if sys.implementation.cache_tag != "cpython-312":
+        raise RuntimeError("Use the project CPython 3.12 runtime to build the image")
     deps = INPUT / "tools"
     base = deps / "base.tar"
     wheel, = deps.glob("numpy-2.2.6-cp312-*.whl")
     if hashlib.sha256(wheel.read_bytes()).hexdigest() != WHEEL_SHA:
         raise ValueError("unexpected NumPy wheel")
-    out = WORK / "delivery"
+    out = WORK / ("image-controls/plain" if args.no_bytecode else "delivery")
     files = [ROOT/(name+".py") for name in ("baseline_model","industrial","contest_submission",
              "policy","guard","serving","prototype","gas","bearing","engine")]
     out.mkdir(exist_ok=True, parents=True)
     with tempfile.TemporaryDirectory(dir=WORK) as tmp:
+        def emit(archive,name,data,mode=0o644):
+            add_runtime(archive,name,data,mode,Path(tmp),not args.no_bytecode)
         layer = Path(tmp) / "app.tar"
         with tarfile.open(layer, "w") as archive, zipfile.ZipFile(wheel) as pkg:
             for item in pkg.infolist():
-                if item.is_dir() or ".data/" in item.filename:
+                if item.is_dir() or ".data/" in item.filename or "tests" in Path(item.filename).parts:
                     continue
                 name = "usr/local/lib/python3.12/site-packages/" + item.filename
-                add(archive, name, pkg.read(item), ((item.external_attr >> 16) & 0o777) or 0o644)
+                emit(archive, name, pkg.read(item), ((item.external_attr >> 16) & 0o777) or 0o644)
             for file in sorted((INPUT / "sdk/contest_harness").glob("*.py")):
-                add(archive, "app/contest_harness/" + file.name, file.read_bytes())
-            add(archive, "app/harness.py", (INPUT / "sdk/template/harness.py").read_bytes())
+                emit(archive, "app/contest_harness/" + file.name, file.read_bytes())
+            emit(archive, "app/harness.py", (INPUT / "sdk/template/harness.py").read_bytes())
             for file in files:
-                add(archive, "app/" + file.name, file.read_bytes())
+                emit(archive, "app/" + file.name, file.read_bytes())
         tmp_image = Path(tmp) / "image.tar"
         with tarfile.open(base) as src, tarfile.open(tmp_image, "w") as dst:
             manifest, = json.load(src.extractfile("manifest.json"))

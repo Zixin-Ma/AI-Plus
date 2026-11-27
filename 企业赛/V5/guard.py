@@ -23,7 +23,19 @@ def strata(key, model, train, valid, labels):
                 # Median-split amplitude keeps per-cell support higher than quartiles.
                 return np.asarray([f"order-{j}-amp-{int(b>=2)}" for j,b in zip(groups,bins)])
         return np.asarray([f"vibration-{g}" for g in bins])
-    settings, counts = np.unique(np.round(train[:, [21, 23]]), axis=0, return_counts=True)
+    rounded = np.round(train[:, [21, 23]])
+    first, a = np.unique(rounded[:, 0], return_inverse=True)
+    second, b = np.unique(rounded[:, 1], return_inverse=True)
+    cells = len(first)*len(second)
+    if cells <= min(65536, 2*len(train)):
+        # Occupied indices have the same lexicographic order as unique(axis=0).
+        histogram = np.bincount(a*len(second)+b, minlength=cells)
+        used = np.flatnonzero(histogram)
+        counts = histogram[used]
+        settings = np.column_stack((first[used//len(second)], second[used%len(second)]))
+    else:
+        settings, counts = np.unique(rounded, axis=0, return_counts=True)
+    settings[settings == 0.] = 0.  # A rounded signed zero denotes the same operating point.
     centers = settings[np.argsort(-counts)[:8]]
     dist = ((valid[:, None, [21, 23]] - centers) ** 2).sum(2)
     ids = dist.argmin(1)

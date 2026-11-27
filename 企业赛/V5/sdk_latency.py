@@ -16,9 +16,9 @@ PUBLIC = HERE.parents[1] / "校赛/work"
 ASSETS = WORK / "v5/serving-assets"
 
 
-def export_image(version, root):
+def export_image(version, root, archive=None):
     root.mkdir(mode=0o755)
-    with (WORK / version / "delivery/harness.tar").open("rb") as image:
+    with (archive or WORK / version / "delivery/harness.tar").open("rb") as image:
         with subprocess.Popen([PUBLIC / "tools/crane", "export", "-", "-"], stdin=image,
                               stdout=subprocess.PIPE) as exporter:
             subprocess.run(["tar", "-xf", "-", "-C", root], stdin=exporter.stdout, check=True)

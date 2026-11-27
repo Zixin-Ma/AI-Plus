@@ -18,6 +18,15 @@ class ReleaseControlTest(unittest.TestCase):
         self.assertNotEqual(sig, harness.release_signature(x, y + 1))
         self.assertNotEqual(sig, harness.release_signature(x + 1, y))
 
+    def test_parent_head_remembers_its_actual_fit_after_rejection(self):
+        old_release = "12"*16
+        current_release = "34"*16
+        head = {"fit_release": np.frombuffer(bytes.fromhex(old_release), dtype=np.uint8)}
+        self.assertFalse(harness.engine_parent_uses_release(head, current_release, True))
+        self.assertTrue(harness.engine_parent_uses_release(head, old_release, False))
+        self.assertTrue(harness.engine_parent_uses_release({}, current_release, True))
+        self.assertFalse(harness.engine_parent_uses_release({}, current_release, False))
+
     def test_movement_tracks_maximum_quartile_on_changed_bearing_release(self):
         bins = np.repeat(np.arange(4), 2)
         parent = np.ones((8, 1))

@@ -147,6 +147,7 @@ def fit_candidates(model, x, y, index):
     legacy.update({k:v for k,v in curve.items() if k.startswith(("curve_", "amp_"))})
     legacy["sensor_evidence_cap"] = np.asarray(4.)
     curve["amplitude_bounds"] = bounds
+    curve["agreement_fraction"] = np.asarray(.30)
     legacy.update(prototype.fit_physical(prototype.response_shape(x),y,classes))
     candidates = {"tail": curve, "independent": legacy}
     # Training and covariance estimation use float64. Archive only the fitted
@@ -220,7 +221,11 @@ def prepare_inference(model, head):
         base = np.log(np.maximum(single(row),1e-12))
         if is_tail:
             d = z.size*np.log1p(d/z.size)
-            return base + np.clip(-.3*(d-d.min()),-12.,0.)-3*np.log1p(raw_d)
+            kinetic_log=np.clip(-.3*(d-d.min()),-12.,0.)
+            raw_log=-3*np.log1p(raw_d)
+            if "agreement_fraction" in state:
+                return base+prototype.combine_gas_views(kinetic_log,raw_log,float(state["agreement_fraction"]))
+            return base+kinetic_log+raw_log
         absolute = ((ka if same_scale else normalize(f,"absolute"))@state["absolute_weights"] + state["absolute_bias"])*.25
         relative = (kinetic-kinetic.mean(0)).ravel()
         t = normalize(relative,"relative")@state["relative_projection"]

@@ -238,7 +238,13 @@ def _lifetime_curve(model, x, y, state, evidence, base_predictions):
         short.append(q25)
         spans.append(2. * q50)
     # The stronger population adjustment needs enough labelled end-of-life examples.
-    mature = np.mean(y <= .02 * np.quantile(y, .9)) >= .05
+    near_failure = int(np.count_nonzero(y <= .02 * np.quantile(y, .9)))
+    mature = near_failure >= .05*len(y)
+    if not mature and near_failure >= max(12, .025*len(y)):
+        # On a sparse release, several distinct observed terminal signatures
+        # supply endpoint evidence that a short, censored prefix cannot provide.
+        terminal = x[y == 0., :][:, bands]
+        mature = len(terminal) >= 3 and len(np.unique(terminal, axis=0)) >= 3
     state.update(curve_bands=bands, curve_cuts=np.asarray(cuts), curve_short=np.sort(short),
                  curve_spans=np.sort(spans), curve_mature=np.asarray(mature),
                  curve_impact=np.quantile(log_bands[:, 2:].mean(1), [.20,.75]))

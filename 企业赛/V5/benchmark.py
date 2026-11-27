@@ -17,6 +17,39 @@ WORK = SCHOOL / "work"
 OUT = HERE.parent / "work" / "v5" / "replay"
 
 
+# Public row counts and action names from V4 trial 235fea6ebd8481811331281798df1821.
+TRACE_SCHEDULE = {'A': [(445, 1244, 'refit'),
+       (445, 1244, 'continue'),
+       (952, 1371, 'refit'),
+       (952, 1371, 'refit'),
+       (1003, 1384, 'refit'),
+       (1065, 1400, 'continue'),
+       (1801, 1584, 'refit'),
+       (2957, 1873, 'refit'),
+       (3050, 1897, 'refit'),
+       (3200, 1935, 'refit')],
+ 'B': [(7032, 1679, 'refit'),
+       (7032, 1679, 'continue'),
+       (7032, 1679, 'continue'),
+       (7032, 1679, 'refit'),
+       (7048, 1683, 'continue'),
+       (7048, 1683, 'continue'),
+       (7048, 1683, 'refit'),
+       (7156, 1710, 'continue'),
+       (7156, 1710, 'continue'),
+       (7156, 1710, 'refit')],
+ 'C': [(113089, 23049, 'refit'),
+       (113089, 23049, 'refit'),
+       (113089, 23049, 'refit'),
+       (114141, 23313, 'refit'),
+       (114141, 23313, 'refit'),
+       (114141, 23313, 'refit'),
+       (116746, 23965, 'refit'),
+       (116746, 23965, 'refit'),
+       (117909, 24256, 'refit'),
+       (117909, 24256, 'refit')]}
+
+
 def partitions(rows, key, split):
     groups = {}
     for i, row in enumerate(rows):
@@ -127,7 +160,18 @@ def run(key, version, split, setting="drift", profile=False, review="controlled"
     xt,yt,_ = agent.projection(train,official,key)
     xv,yv,_ = agent.projection(valid,official,key)
     # Rebuild the starting model on the first release: later training pairs are unseen.
-    first = release <= .55
+    if setting == "trace":
+        # Apply only the released row-count ratios and action schedule from the V4
+        # trial to public data. The hidden samples and hidden metrics are never used.
+        observed = TRACE_SCHEDULE[key]
+        train_sizes = np.array([row[0] for row in observed])
+        valid_sizes = np.array([row[1] for row in observed])
+        train_rates = train_sizes / train_sizes[-1]
+        valid_rates = valid_sizes / valid_sizes[-1]
+        valid_release = partitions(valid,key,split)[0]
+    else:
+        train_rates = np.linspace(.55,1.,10)
+    first = release <= train_rates[0]
     m = official.meta
     static = agent.Model(m["task"], m["paths"], m["classes"],xt[first],yt[first],
                          hidden=m["hidden"], seed=m["seed"], batch_size=m["batch_size"])
@@ -154,7 +198,9 @@ def run(key, version, split, setting="drift", profile=False, review="controlled"
         phases = {5:[0,2,3,1,0,3,1,2,2,0], 6:[2,1,3,0,1,3,2,0,0,1],
                   7:[3,3,1,2,0,2,1,3,0,2],
                   8:[2,0,2,3,1,1,0,3,2,1],9:[1,3,3,0,2,1,0,2,3,0],
-                  10:[0,3,1,2,2,0,1,3,1,0]}[split]
+                  10:[0,3,1,2,2,0,1,3,1,0],
+                  11:[2,2,0,3,2,1,0,0,3,1],12:[3,1,1,0,2,1,3,0,2,2],
+                  13:[1,0,3,3,2,1,0,2,0,1]}[split]
     masks = [(phase==p)&audit for p in range(4)]
     def metrics(model,head):
         pred = agent.values(key,model,head,xv[audit])
@@ -166,8 +212,10 @@ def run(key, version, split, setting="drift", profile=False, review="controlled"
         parent=root/"initial"; parent.mkdir(); static.save(parent/"checkpoint.npz")
         paths=[parent]
         for i,stage in enumerate(phases,1):
-            tr=np.flatnonzero(release <= .55+.45*(i-1)/9)
+            tr=np.flatnonzero(release <= train_rates[i-1])
             sel=np.flatnonzero((phase==stage)&~audit)
+            if setting == "trace":
+                sel = np.flatnonzero((valid_release <= valid_rates[i-1]) & ~audit)
             if setting == "fresh":
                 # Each visit receives a different selection block inside each domain.
                 # The audit side remains completely isolated in this replay.
@@ -188,6 +236,8 @@ def run(key, version, split, setting="drift", profile=False, review="controlled"
                                    validation_rows=lambda:(valid[j] for j in sel))
             # Include backbone-only actions for bearings, matching the prevalent V2 choice.
             tool="adam" if key=="B" and i not in (1,5,9) else "refit"
+            if setting == "trace":
+                tool=observed[i-1][2]
             r.plan=f"{tool}|half|test changed training release"
             r.prompt_bytes = 0
             tick = time.process_time()
@@ -200,6 +250,9 @@ def run(key, version, split, setting="drift", profile=False, review="controlled"
             model,head,_=agent.artifact(parent)
             pred=metrics(model,head)
             gain=[agent.gain(key,a,b)/max(a,1e-9) for a,b in zip(ref,pred)]
+            if key == "C":
+                error = agent.values(key,model,head,xv[masks[stage]])[:,0]-yv[masks[stage]]
+                nasa = float(np.mean(np.expm1(np.maximum(error/10.,-error/13.))))
             drops=[max(0.,peaks[p]-gain[p]) for p in seen]
             seen.add(stage)
             for p in seen:
@@ -208,7 +261,7 @@ def run(key, version, split, setting="drift", profile=False, review="controlled"
             outcome = {a:{k:v for k,v in values.items() if k in ("primary","worst","floor","memory_loss","release_movement","allowed")}
                        for a,values in cfg["scores"].items()}
             report.append(dict(round=i,stage=stage,scores=outcome,expert_weight=cfg.get("expert_weight"),head_family=r.record["configuration"].get("head_family"),replanned=r.record["configuration"].get("replanned"),cpu=elapsed,calls=len(r.call_ids),prompt_bytes=r.prompt_bytes,checkpoint_bytes=sum(p.stat().st_size for p in r.candidate.glob("*.npz")),static=ref,metrics=pred,gains=gain,
-                       stage_gain=gain[stage],forget=max(drops,default=0.),train=len(tr),
+                       nasa_mean=nasa if key=="C" else None,stage_gain=gain[stage],forget=max(drops,default=0.),train=len(tr),
                        selection=len(sel),audit=int(masks[stage].sum()),deployed=r.record["configuration"]["deployed"]))
         if profile:
             ids=np.linspace(0,len(valid)-1,min(512,len(valid)),dtype=int)
@@ -240,8 +293,8 @@ if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("task",choices=list("ABC"))
     parser.add_argument("version",choices=["v4","v5"])
-    parser.add_argument("split",type=int,choices=list(range(11)))
-    parser.add_argument("--setting",choices=["drift","official","fresh"],default="drift")
+    parser.add_argument("split",type=int,choices=list(range(14)))
+    parser.add_argument("--setting",choices=["drift","official","fresh","trace"],default="drift")
     parser.add_argument("--output",type=Path,default=OUT)
     parser.add_argument("--profile",action="store_true")
     parser.add_argument("--review",choices=["controlled","measured"],default="controlled")

@@ -52,7 +52,7 @@ class PolicyTest(unittest.TestCase):
         for key in "ABC":
             with (DATA/key/"public/validation.jsonl").open() as stream:
                 rows = [json.loads(line) for line in stream]
-            for split in [8,9,10]:
+            for split in [8,9,10,11,12,13]:
                 _, phases, audit = benchmark.partitions(rows,key,split)
                 self.assertTrue(all(np.any((phases==p) & audit) and np.any((phases==p) & ~audit) for p in range(4)))
                 if key == "C":

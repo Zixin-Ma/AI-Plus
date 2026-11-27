@@ -28,6 +28,10 @@ ENGINE_PANEL = None
 ENGINE_FLOOR_WEIGHT = .6
 ENGINE_OFFSET_MODE = "taper"
 REUSE_ENGINE_PLAN = True
+ENGINE_ORIGIN_AWARE = True
+ENGINE_CARRY = False
+ENGINE_RETRY_SCALE = 1.
+ENGINE_TAIL_WEIGHT = 0.
 CLASS_DROP_LIMIT = None  # Optional development ablation.
 WEIGHTS = {"A": (1.,.65,.35,.15), "B": (1.,.65,.35,.15), "C": (1.,.85)}
 OFFSET = {"B": .5, "C": .15}
@@ -144,7 +148,7 @@ def eligible(key, parent, candidate):
             gain(key, parent["worst"], candidate["worst"]) >= -allowance)
 
 
-def continue_mlp(key, index, model, x, y, strength):
+def continue_mlp(key, index, model, x, y, strength, retry_scale=1.):
     old_steps = model.meta["steps"]
     # Bounded backbone update retains the checkpoint, Adam moments and scalers.
     limit = {"A": 2048, "B": 768, "C": 1536}[key]
@@ -156,8 +160,16 @@ def continue_mlp(key, index, model, x, y, strength):
     model.meta["learning_rate"] = {"A": .001, "B": .0008, "C": .0006}[key]
     if strength == "half":
         model.meta["learning_rate"] *= .5
+    model.meta["learning_rate"] *= retry_scale
     model.fit(xb, yb, 1)
     return old_steps, len(yb)
+
+
+def engine_parent_uses_release(head, signature, previous_round_matched):
+    # A rejected refit leaves the deployed head trained on its older release.
+    if ENGINE_ORIGIN_AWARE and "fit_release" in head:
+        return head["fit_release"].tobytes() == bytes.fromhex(signature)
+    return previous_round_matched
 
 
 def release_signature(x, y):
@@ -201,6 +213,9 @@ def prior_contexts(history, current, radius):
     for age, record in enumerate(reversed(history[-6:]), 1):
         cfg = record.get("configuration") or {}
         old = cfg.get("context_profile")
+        milli = cfg.get("context_milli")
+        if isinstance(milli, list) and len(milli) == len(current):
+            old = (np.asarray(milli, dtype=float)/1000.).tolist()
         if not isinstance(old, list) or len(old) != len(current):
             continue
         distance = float(np.sqrt(np.mean((np.asarray(old)-current)**2)))
@@ -289,6 +304,12 @@ def train(rnd):
             return dict(memory_loss=float(np.max(errors(pred)-parent_errors)/scale),
                         release_movement=release_movement(key, changed, bool(head), pred, parent_pred, bins, scale))
     parent_values = static_pred if not head and "reference.npz" not in rnd.parent.declared_paths() else values(key,model,head,xv)
+    def tail_cost(pred):
+        error = pred[:,0] - yv
+        signed = np.maximum(error/10., -error/13.)
+        start = int(.95*len(signed))
+        return float(np.partition(signed,start)[start:].mean())
+    parent_tail = tail_cost(parent_values) if key=="C" and ENGINE_TAIL_WEIGHT else None
     parent = measure(parent_values)
     if key == "A" and head and SWITCH_SE:
         parent_influence = f1_influence(yv, parent_values)
@@ -343,7 +364,8 @@ def train(rnd):
             plan = dict(tool="continue", strength="half", hypothesis="Stable release; retain fitted correction and test a small update.", fallback=False)
     name = plan["tool"]
     x, y, _ = training
-    steps, sampled = continue_mlp(key, rnd.round_index, model, x, y, plan["strength"])
+    retry_scale = ENGINE_RETRY_SCALE if key == "C" and head and last.get("deployed") == "parent" else 1.
+    steps, sampled = continue_mlp(key, rnd.round_index, model, x, y, plan["strength"], retry_scale)
     chosen_family = "backbone"
     candidate_heads = {}
     if name == "refit":
@@ -351,11 +373,14 @@ def train(rnd):
         if key == "A":
             candidate_heads = expert.fit_candidates(model, x, y, rnd.round_index)
         elif key == "C":
-            options_c = dict(previous=head, stable_release=same_rows)
+            fitted_here = engine_parent_uses_release(head, signature, same_rows)
+            options_c = dict(previous=head, stable_release=fitted_here)
             if hasattr(expert, "fit_candidates"):
                 candidate_heads = expert.fit_candidates(model, x, y, rnd.round_index, **options_c)
             else:
                 candidate_heads = {"engine": expert.fit(model, x, y, rnd.round_index, **options_c)}
+            if ENGINE_CARRY and head and "backbone_only" not in head:
+                candidate_heads["carry"] = head
         elif hasattr(expert, "fit_candidates"):
             candidate_heads = expert.fit_candidates(model, x, y, rnd.round_index)
         else:
@@ -402,6 +427,8 @@ def train(rnd):
                 for weight in weights:
                     predictions = weight * shifted + (1-weight) * static_pred
                     metrics = measure(predictions)
+                    if parent_tail is not None:
+                        metrics["tail_gain"] = (parent_tail-tail_cost(predictions))/max(parent_tail,1e-9)
                     if key == "A" and head and SWITCH_SE and family not in ("parent_head",parent_family):
                         diff = f1_influence(yv,predictions) - parent_influence
                         metrics["switch_margin"] = float(SWITCH_SE * np.std(diff) / np.sqrt(max(1,len(diff)-1)))
@@ -414,9 +441,12 @@ def train(rnd):
             score = variants[choice]
             overall = gain(key, parent["primary"], score["primary"]) / scale
             weakest = .28 * (score["worst"] - parent["worst"]) if key == "A" and RECALL_RESCUE else 0.
-            return eligible(key, parent, score), overall + weakest + .45 * min(0., score["floor"]) + BLOCK_WEIGHT * min(0.,score.get("block_floor",0.)) + ENGINE_FLOOR_WEIGHT * min(0.,score.get("stage_floor",0.))
+            return eligible(key, parent, score), overall + ENGINE_TAIL_WEIGHT * score.get("tail_gain",0.) + weakest + .45 * min(0., score["floor"]) + BLOCK_WEIGHT * min(0.,score.get("block_floor",0.)) + ENGINE_FLOOR_WEIGHT * min(0.,score.get("stage_floor",0.))
         chosen_family, weight, offset = max(variants, key=priority)
         selected = candidate_heads[chosen_family]
+        if (ENGINE_ORIGIN_AWARE and key=="C" and name=="refit"
+                and chosen_family!="carry" and weight and "backbone_only" not in selected):
+            selected["fit_release"] = np.frombuffer(bytes.fromhex(signature), dtype=np.uint8)
         if weight == 0.:
             # A zero mixture needs only the frozen reference and can skip expert inference.
             selected = {"backbone_only": np.asarray(1)}
@@ -438,7 +468,7 @@ def train(rnd):
         if key != "A":
             candidate_score.update(retention(values(key,model,{},probe_x)))
     scores = {"parent": parent, "candidate": candidate_score}
-    info = dict(method=name, context_profile=context.tolist(), training_signature=signature, same_training=same_rows, head_family=chosen_family, plan=plan, diagnosis=diagnosis, planner_text=planner_text[:280], replanned=replan,
+    info = dict(method=name, context_milli=np.rint(context*1000).astype(int).tolist(), training_signature=signature, same_training=same_rows, head_family=chosen_family, plan=plan, diagnosis=diagnosis, planner_text=planner_text[:280], replanned=replan,
                 old_steps=steps, steps=model.meta["steps"], learning_rate=model.meta["learning_rate"],
                 expert_weight=weight, life_offset=float(selected.get("life_offset", 0.)), static_groups=static_groups, train_rows=len(y), adam_rows=sampled, validation_rows=len(yv), scores=scores)
     change = f"Executed {name} with {plan['strength']} learning rate. Adam steps {steps} to {model.meta['steps']}."
@@ -446,7 +476,11 @@ def train(rnd):
                 seed=model.meta["seed"])
     folder = Path(mkdtemp(prefix="candidate-", dir=os.environ.get("CONTEST_WORK", "/workspace")))
     model.save(folder / "checkpoint.npz")
-    np.savez_compressed(folder / "reference.npz", **anchor.params)
+    if "reference.npz" in rnd.parent.declared_paths():
+        # The reference is immutable. Its arrays were validated and read above.
+        shutil.copyfile(rnd.parent.path("reference.npz"), folder / "reference.npz")
+    else:
+        np.savez_compressed(folder / "reference.npz", **anchor.params)
     files = ["checkpoint.npz", "reference.npz"]
     if selected:
         np.savez_compressed(folder / "head.npz", **{k:v for k,v in selected.items() if not k.startswith("ref_")})
