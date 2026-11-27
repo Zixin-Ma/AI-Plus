@@ -208,8 +208,10 @@ def residual_adjust(x, h, route):
 
 
 def patch(route):
-    if route in ("production","final"):
+    if route=="final":
         return
+    if route=="production":
+        route="smalltemper"
     parent=load("previous_gas",HERE.parent/"V5/gas.py")
     fit0,pred0=parent.fit_candidates,parent.predict
     gas.fit_candidates,gas.predict=fit0,pred0
@@ -282,6 +284,9 @@ def replay(route, part, settings):
 
 
 def external(route):
+    supported={"final","ordinal","contrast","temporal","localweak","smalltemper","localboost","localtemp","extrap",*LANDMARKS}
+    if route not in supported:
+        raise ValueError("The native-device implementation is unavailable for "+route)
     src = load("external5",HERE.parent/"V5/gas_v5_study.py")
     src.OUT = HERE.parent/"work/v5/gas"
     native = src.native
@@ -339,7 +344,35 @@ def external(route):
     src.native=compare_native
     data={"one_year":src.forward(route),"dsps":src.dsps(route,False),
           "concentration":src.dsps(route,True),"home":src.home(route)}
+    if route=="final":
+        data=label_versions(data)
     (OUT/f"external-{route}.json").write_text(json.dumps(data,indent=2))
+
+
+def summary():
+    modes=("schedule","trace","fresh","official","drift")
+    keys=("mean","worst","stage_mean","stage_floor","forget","delay")
+    def gather(route,subset,mode):
+        records=[json.loads((OUT/"replays"/route/f"{mode}-v6-A-{n}.json").read_text()) for n in subset]
+        return {k:float(np.mean([d[k] for d in records])) for k in keys}
+    out={}
+    for group,ids in (("screen",SCREEN),("check",CHECK),("all",sorted(SCREEN+CHECK))):
+        out[group]={m:{version:gather(route,ids,m) for version,route in (("v5","base"),("v6","final"))} for m in modes}
+    (OUT/"summary.json").write_text(json.dumps(out,indent=2))
+
+
+def label_versions(data):
+    # The shared evaluator predates V6 and calls its two input slots v4/v5.
+    for obj in (*data["one_year"].values(),data["dsps"],data["concentration"],data["home"]):
+        if "v4" not in obj["families"]:
+            continue
+        mapping={"v4":"v5","v5":"v6"}
+        for field in ("inner_scores","head_f1"):
+            obj[field]={mapping[k[:2]]+k[2:]:val for k,val in obj[field].items()}
+        for v in obj["families"].values():
+            v["family"]=mapping[v["family"][:2]]+v["family"][2:]
+        obj["families"]={mapping[k]:v for k,v in obj["families"].items()}
+    return data
 
 
 def public_pair():
@@ -441,11 +474,13 @@ def verify_deployment():
 if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("route",choices=ROUTES)
-    parser.add_argument("part",choices=("screen","check","external","verify","full","pair"))
+    parser.add_argument("part",choices=("screen","check","external","verify","full","pair","summary"))
     parser.add_argument("settings",nargs="*",default=["trace","schedule","fresh","official"])
     args=parser.parse_args()
     OUT.mkdir(exist_ok=True,parents=True)
-    if args.part=="pair":
+    if args.part=="summary":
+        summary()
+    elif args.part=="pair":
         public_pair()
     elif args.part=="full":
         patch(args.route)

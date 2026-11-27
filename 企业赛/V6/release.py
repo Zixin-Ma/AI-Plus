@@ -3,6 +3,7 @@ import hashlib
 import html
 import json
 import statistics as st
+import subprocess
 import zipfile
 from pathlib import Path
 import pymupdf as pdf
@@ -107,11 +108,14 @@ def main():
     # Include earlier project code used by ablation, data preparation and verification.
     source=OUT/"企业赛V6源码.zip"
     with zipfile.ZipFile(source,"w",zipfile.ZIP_DEFLATED) as z:
+        listing=subprocess.check_output(["git","ls-files","-z","--cached","--others","--exclude-standard","--","企业赛","校赛"],cwd=REPO)
         paths=set()
-        for root in (HERE.parent,REPO/"校赛"):
-            for f in root.rglob("*"):
-                if "work" in f.parts or ".git" in f.parts or not f.is_file():continue
-                if f.name!="AGENTS.md" and (f.suffix in (".py",".md",".txt") or f.name=="Dockerfile"):paths.add(f)
+        for entry in listing.split(b"\x00"):
+            if not entry:
+                continue
+            f=REPO/entry.decode("utf-8")
+            if f.is_file() and f.name!="AGENTS.md" and (f.suffix in (".py",".md",".txt") or f.name=="Dockerfile"):
+                paths.add(f)
         paths.add(HERE/"evaluation_protocol.json")
         for f in sorted(paths):
             z.write(f,f.relative_to(REPO))
@@ -120,12 +124,15 @@ def main():
         for f in sorted(WORK.rglob("*.json")):
             if any(t in f.relative_to(WORK).parts for t in ("delivery","serving-assets")):continue
             z.write(f,f.relative_to(WORK))
+        for name in ("gas-qualified-4.log","gas-qualified-5.log","gas-qualified-6.log","gas-qualified-7.log"):
+            z.write(WORK/name,"contracts/"+name)
         z.write(WORK/"image-proof-0.log","image-proof-0.log")
         for f in sorted(HERE.glob("*.md")):z.write(f,"说明/"+f.name)
     for path in [source,evidence]:
         with zipfile.ZipFile(path) as z:
             assert path.stat().st_size<=50_000_000 and z.testzip() is None
-    files=[OUT/"harness.tar",source,evidence,OUT/"企业赛V6技术报告.pdf"]
+    (OUT/"模型配置.txt").write_bytes((HERE/"模型配置.txt").read_bytes())
+    files=[OUT/"harness.tar",source,evidence,OUT/"企业赛V6技术报告.pdf",OUT/"模型配置.txt",OUT/"企业赛V6验证汇总.md"]
     (OUT/"SHA256SUMS.txt").write_text("".join(sha(f)+"  "+f.name+chr(10) for f in files))
 if __name__=="__main__":
     main()
