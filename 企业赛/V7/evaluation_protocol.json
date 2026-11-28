@@ -1,0 +1,32 @@
+{
+  "evaluator_sha256": "2fe0e7bc6336b17cd609622bb1933638beb9e33cea4148b08485dccfd069765b",
+  "development": [
+    0,
+    5,
+    8,
+    13,
+    16,
+    19
+  ],
+  "confirmation": [
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108
+  ],
+  "protocols": [
+    "schedule",
+    "transfer",
+    "trace",
+    "official",
+    "drift",
+    "fresh",
+    "fresh-measured"
+  ],
+  "primary": "paired mean of per-stream minimum stage means on schedule; require directions across protocols and explicitly report regressions and tradeoffs",
+  "limits": "All local metrics are proxies; no V6 cloud run in the team ledger. Training and validation row indices checked by digest; audit never visible for selection. Current-stage labeled validation excluded in transfer."
+}

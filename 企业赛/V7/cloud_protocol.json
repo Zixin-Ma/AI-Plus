@@ -1,0 +1,1 @@
+{"registered_before_model_freeze": true, "model": "Qwen/Qwen3.8-27B", "modes": ["schedule"], "splits": [101, 104, 107], "tasks": ["A", "B", "C"], "versions": ["v6", "v7"], "rounds": 10, "paid_model_selector": "real PyTRiO with exact-request cache; compare to frozen fixed-control replays"}
