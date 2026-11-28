@@ -1,4 +1,4 @@
-"""Resume a single frozen trial. Poll read-only endpoints across transient outages."""
+"""Read-only monitor for a trial whose run receipt already exists."""
 import argparse
 from datetime import datetime, timezone
 import json
@@ -12,6 +12,8 @@ def main():
     p.add_argument("--poll-seconds",type=int,default=60)
     a=p.parse_args()
     if a.poll_seconds<20:raise ValueError("Use at least twenty seconds between reads")
+    if not (trial.OUT/"run.json").exists():
+        raise SystemExit("No existing run receipt to monitor")
     session=trial.client()
     deadline=time.monotonic()+6*3600
     while time.monotonic()<deadline:
@@ -26,17 +28,9 @@ def main():
             if status in ("failed","cancelled","quarantined"):raise RuntimeError(status)
             if status=="completed" and (trial.OUT/"report.json").exists():
                 report=trial.load("report.json")
-                if report.get("report",{}).get("usage_settled") and report.get("run",{}).get("status")=="completed":
+                if (report.get("report") or {}).get("usage_settled") and report.get("run",{}).get("status")=="completed":
                     print(now(),"Completed and settled",flush=True)
                     return
-        elif (trial.OUT/"image-status.json").exists() and (trial.OUT/"document.json").exists():
-            state=trial.load("image-status.json")["status"]
-            if state in ("failed","rejected"):raise RuntimeError(state)
-            if state=="ready":
-                # start() checks server-side submissions and trials before posting.
-                with (trial.OUT/"operation.lock").open("a") as lock:
-                    trial.fcntl.flock(lock,trial.fcntl.LOCK_EX)
-                    trial.start(session)
         time.sleep(a.poll_seconds)
     raise TimeoutError("Trial exceeded the platform deadline")
 if __name__=="__main__":
