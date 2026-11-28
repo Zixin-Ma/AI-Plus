@@ -1,0 +1,6 @@
+企业赛 V8 / McCarthy
+Qwen/Qwen3.8-27B，PyTRiO；temperature 0，规划 56 Token，复核 32 Token。
+镜像 bjtu-rsi:enterprise-v8；Linux/amd64；CPython 3.12；NumPy 2.2.6；Harness SDK 1.0.4。
+入口 python3 /app/harness.py ，支持 describe、train、predict。用户 65534:65534。
+模型由任务头、赛方静态检查点、历史工件和宿主 Qwen 网关共同构成。
+SHA-256 b17aac2e324116a1b3b98922f85f1f25198eeb195ee6f7dfdadb3e4f0850751a

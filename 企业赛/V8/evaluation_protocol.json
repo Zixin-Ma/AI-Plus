@@ -1,0 +1,24 @@
+{
+  "evaluator_sha256": "c3e2ceb407c2c1248da0b3b8ac52d5eeaeb608cb2993572639836ad1e20c87d7",
+  "development": [
+    0,
+    13
+  ],
+  "confirmation": [
+    201,
+    202,
+    203,
+    204,
+    205,
+    206,
+    207,
+    208
+  ],
+  "protocols": [
+    "anchored",
+    "schedule",
+    "transfer",
+    "fresh-measured"
+  ],
+  "primary": "Compare against V5 and V7. Anchored holds the official static checkpoint and full public training pool fixed and uses V5 release/action timing and corresponding validation fractions. Report stage mean, minimum stage mean, forgetting, recovery and resources. Other modes challenge full-data assumption or selector generalization. Eight masks reuse one public dataset and are not eight independent fleets."
+}
